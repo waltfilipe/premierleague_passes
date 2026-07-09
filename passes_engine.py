@@ -31,7 +31,7 @@ from comparison_config import (
     normalize_tier_model,
     normalize_xt_surface_mode,
 )
-from heuristic_scoring import POSITION_GROUPS_ORDER, is_outfield_position, position_group
+from heuristic_scoring import POSITION_GROUPS_ORDER, is_outfield_position, position_group, rating_position_group
 
 try:
     from sofascore_positions import normalize_sofascore_position, resolve_match_positions
@@ -51,11 +51,18 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 38
+DATA_CACHE_VERSION = 39
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
 RATING_MIN_PASSES_PCT = 0.30
+RATING_ELIGIBILITY_PERCENTILE = 75
+RATING_VOLUME_WEIGHT = 0.40
+RATING_EFFICIENCY_WEIGHT = 0.60
+RATING_RANK_BLEND = 0.85
+RATING_PERCENTILE_BLEND = 0.15
+SHRINKAGE_PASS_K = 150
+SHRINKAGE_MINUTES_K = 450
 RANKING_TOP_N = 20
 RATING_TOP_N = 20
 RATING_SCORE_BEST = 0.9
@@ -123,8 +130,19 @@ RANKING_METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     )),
 )
 
+RATING_DIMENSIONS: tuple[tuple[str, str | None, str], ...] = (
+    ("impact", "impact_passes_p90", "impact_per_pass"),
+    ("phi", "phi_p90", "phi_per_pass"),
+    ("dxt", "dxt_p90", "dxt_per_pass"),
+    ("decisive", None, "dxt_gt_01_pct"),
+    ("construction", "construction_aip", "construction_aip_per_pass"),
+    ("aggression", "aggression_aip", "aggression_aip_per_pass"),
+)
+
 RATING_METRIC_KEYS: tuple[str, ...] = tuple(
-    key for _, keys in RANKING_METRIC_GROUPS for key in keys
+    key for _, volume_key, efficiency_key in RATING_DIMENSIONS
+    for key in ((volume_key, efficiency_key) if volume_key else (efficiency_key,))
+    if key is not None
 )
 
 METRIC_LABELS: dict[str, str] = {
@@ -686,7 +704,7 @@ def _br_position_group(raw: str | None) -> str | None:
     text = str(raw or "").strip().upper()
     if text == "GK" or not text:
         return None
-    return position_group(_normalize_position(text))
+    return rating_position_group(_normalize_position(text))
 
 
 def build_serie_a_players(
@@ -1084,7 +1102,7 @@ def score_display_color(display_score: float) -> str:
 
 
 def _rank_to_rating_score(rank: int, pool_size: int) -> float:
-    """1º = 10, mediano = 7, último = 4 (interpolação linear em dois segmentos)."""
+    """1º = 9.0, mediano = 6.0, último = 3.0 (interpolação linear em dois segmentos)."""
     if pool_size <= 1:
         return RATING_SCORE_MID
     if pool_size == 2:
@@ -1101,15 +1119,134 @@ def _rank_to_rating_score(rank: int, pool_size: int) -> float:
     return RATING_SCORE_MID + (RATING_SCORE_WORST - RATING_SCORE_MID) * t
 
 
-def _metric_ranks_for_pool(pool: list[dict]) -> dict[str, dict[str, dict]]:
+def _eligibility_floor_percentile() -> float:
+    """P25 when RATING_ELIGIBILITY_PERCENTILE=75 → ~75% of the group stays above the bar."""
+    return max(0.0, min(100.0, 100.0 - float(RATING_ELIGIBILITY_PERCENTILE)))
+
+
+def _shrinkage_sample_for_metric(key: str, player: dict) -> float:
+    if key.endswith("_p90") or key in {"construction_aip", "aggression_aip"}:
+        return float(player.get("minutes") or 0)
+    if key.startswith("construction"):
+        return float(player.get("construction_passes") or player.get("passes_completed") or 0)
+    if key.startswith("aggression"):
+        return float(player.get("aggression_passes") or player.get("passes_completed") or 0)
+    return float(player.get("passes_completed") or 0)
+
+
+def _shrinkage_k_for_metric(key: str) -> float:
+    if key.endswith("_p90") or key in {"construction_aip", "aggression_aip"}:
+        return SHRINKAGE_MINUTES_K
+    return SHRINKAGE_PASS_K
+
+
+def _shrink_metric_value(value: float | None, sample: float, pool_values: list[float], *, k: float) -> float:
+    clean = [float(v) for v in pool_values if v is not None]
+    prior = float(np.mean(clean)) if clean else 0.0
+    if value is None or sample <= 0:
+        return prior
+    weight = sample / (sample + k)
+    return weight * float(value) + (1.0 - weight) * prior
+
+
+def _build_shrunk_metric_values(pool: list[dict], keys: tuple[str, ...]) -> dict[str, dict[str, float]]:
+    out: dict[str, dict[str, float]] = {str(p["player_id"]): {} for p in pool}
+    for key in keys:
+        raw_values = [float(p.get(key) or 0) for p in pool]
+        for player in pool:
+            pid = str(player["player_id"])
+            sample = _shrinkage_sample_for_metric(key, player)
+            out[pid][key] = _shrink_metric_value(
+                player.get(key),
+                sample,
+                raw_values,
+                k=_shrinkage_k_for_metric(key),
+            )
+    return out
+
+
+def _value_percentile_rank(value: float | None, pool_values: list[float]) -> float:
+    clean = np.array([float(v) for v in pool_values if v is not None], dtype=float)
+    if clean.size == 0:
+        return 0.5
+    if value is None:
+        return 0.0
+    target = float(value)
+    return float((clean < target).sum() + 0.5 * (clean == target).sum()) / float(clean.size)
+
+
+def _percentile_to_rating_score(percentile: float) -> float:
+    pct = max(0.0, min(1.0, float(percentile)))
+    if pct >= 0.5:
+        t = (pct - 0.5) / 0.5
+        return RATING_SCORE_MID + (RATING_SCORE_BEST - RATING_SCORE_MID) * t
+    t = pct / 0.5
+    return RATING_SCORE_WORST + (RATING_SCORE_MID - RATING_SCORE_WORST) * t
+
+
+def _blended_rating_score(rank: int, pool_size: int, percentile: float) -> float:
+    rank_score = _rank_to_rating_score(rank, pool_size)
+    pct_score = _percentile_to_rating_score(percentile)
+    return RATING_RANK_BLEND * rank_score + RATING_PERCENTILE_BLEND * pct_score
+
+
+def _metric_rating_score(
+    pool: list[dict],
+    shrunk_values: dict[str, dict[str, float]],
+    player: dict,
+    key: str,
+    pool_size: int,
+) -> float:
+    pid = str(player["player_id"])
+    values = [shrunk_values[str(p["player_id"])][key] for p in pool]
+    value = shrunk_values[pid][key]
+    rank = 1 + sum(1 for peer_value in values if peer_value > value)
+    percentile = _value_percentile_rank(value, values)
+    return _blended_rating_score(rank, pool_size, percentile)
+
+
+def _dimension_rating_score(
+    pool: list[dict],
+    shrunk_values: dict[str, dict[str, float]],
+    player: dict,
+    volume_key: str | None,
+    efficiency_key: str,
+    pool_size: int,
+) -> float:
+    if volume_key is None:
+        return _metric_rating_score(pool, shrunk_values, player, efficiency_key, pool_size)
+    volume_score = _metric_rating_score(pool, shrunk_values, player, volume_key, pool_size)
+    efficiency_score = _metric_rating_score(pool, shrunk_values, player, efficiency_key, pool_size)
+    return RATING_VOLUME_WEIGHT * volume_score + RATING_EFFICIENCY_WEIGHT * efficiency_score
+
+
+def _pass_rating_from_dimensions(
+    pool: list[dict],
+    shrunk_values: dict[str, dict[str, float]],
+    player: dict,
+    pool_size: int,
+) -> float:
+    scores = [
+        _dimension_rating_score(pool, shrunk_values, player, volume_key, efficiency_key, pool_size)
+        for _, volume_key, efficiency_key in RATING_DIMENSIONS
+    ]
+    return round(sum(scores) / len(scores), 4) if scores else RATING_SCORE_MID
+
+
+def _metric_ranks_for_pool(pool: list[dict], shrunk_values: dict[str, dict[str, float]] | None = None) -> dict[str, dict[str, dict]]:
     """player_id -> metric_key -> {rank, total, value}."""
     n = len(pool)
     if n == 0:
         return {}
+    shrunk_values = shrunk_values or _build_shrunk_metric_values(pool, tuple(RANK_DISPLAY_KEYS))
     keys = list(RANK_DISPLAY_KEYS)
     out: dict[str, dict[str, dict]] = {p["player_id"]: {} for p in pool}
     for key in keys:
-        ordered = sorted(pool, key=lambda p: p.get(key, 0) or 0, reverse=True)
+        ordered = sorted(
+            pool,
+            key=lambda p: shrunk_values[str(p["player_id"])].get(key, p.get(key, 0) or 0),
+            reverse=True,
+        )
         for rank, player in enumerate(ordered, start=1):
             out[player["player_id"]][key] = {
                 "rank": rank,
@@ -1119,14 +1256,19 @@ def _metric_ranks_for_pool(pool: list[dict]) -> dict[str, dict[str, dict]]:
     return out
 
 
-def _section_ratings_for_pool(pos_players: list[dict], pool_size: int) -> dict[str, dict[str, float]]:
+def _section_ratings_for_pool(
+    pos_players: list[dict],
+    pool_size: int,
+    shrunk_values: dict[str, dict[str, float]],
+) -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = {}
     for section_key, keys in SECTION_RATING_GROUPS.items():
         scores: dict[str, list[float]] = {p["player_id"]: [] for p in pos_players}
         for key in keys:
-            ordered = sorted(pos_players, key=lambda p: p.get(key, 0) or 0, reverse=True)
-            for rank, player in enumerate(ordered, start=1):
-                scores[player["player_id"]].append(_rank_to_rating_score(rank, pool_size))
+            for player in pos_players:
+                scores[player["player_id"]].append(
+                    _metric_rating_score(pos_players, shrunk_values, player, key, pool_size)
+                )
         out[section_key] = {
             pid: round(sum(vals) / len(vals), 4) if vals else 0.0
             for pid, vals in scores.items()
@@ -1145,54 +1287,56 @@ def _section_rating_ranks_for_pool(section_scores: dict[str, dict[str, float]], 
     return ranks
 
 
-def _position_pass_thresholds(players: list[dict]) -> dict[str, dict[str, float | int]]:
-    by_group: dict[str, list[int]] = {}
+def _position_eligibility_thresholds(players: list[dict]) -> dict[str, dict[str, float | int]]:
+    floor_pct = _eligibility_floor_percentile()
+    by_group: dict[str, list[dict]] = {}
     for player in players:
         group = str(player.get("position_group") or "—")
-        passes = int(player.get("passes_completed") or 0)
-        by_group.setdefault(group, []).append(passes)
+        by_group.setdefault(group, []).append(player)
     out: dict[str, dict[str, float | int]] = {}
-    for group, values in by_group.items():
-        max_passes = max(values) if values else 0
+    for group, group_players in by_group.items():
+        passes = [int(p.get("passes_completed") or 0) for p in group_players]
+        minutes_pcts = [
+            float(p["minutes_pct"])
+            for p in group_players
+            if p.get("minutes_pct") is not None
+        ]
+        max_passes = max(passes) if passes else 0
+        min_passes = float(np.percentile(passes, floor_pct)) if passes else 0.0
+        min_minutes_pct = float(np.percentile(minutes_pcts, floor_pct)) if minutes_pcts else RATING_MIN_MINUTES_PCT
         out[group] = {
             "max_passes": max_passes,
-            "min_passes": max_passes * RATING_MIN_PASSES_PCT if max_passes > 0 else 0.0,
+            "min_passes": min_passes,
+            "min_minutes_pct": min_minutes_pct,
         }
     return out
 
 
 def enrich_player_eligibility(players: list[dict]) -> list[dict]:
-    thresholds = _position_pass_thresholds(players)
+    thresholds = _position_eligibility_thresholds(players)
     enriched: list[dict] = []
     for player in players:
         group = str(player.get("position_group") or "—")
-        th = thresholds.get(group, {"max_passes": 0, "min_passes": 0.0})
+        th = thresholds.get(group, {"max_passes": 0, "min_passes": 0.0, "min_minutes_pct": RATING_MIN_MINUTES_PCT})
         passes = int(player.get("passes_completed") or 0)
         max_passes = int(th["max_passes"])
         min_passes = float(th["min_passes"])
+        min_minutes_pct = float(th.get("min_minutes_pct", RATING_MIN_MINUTES_PCT))
         minutes_pct = player.get("minutes_pct")
-        minutes_ok = minutes_pct is not None and minutes_pct > RATING_MIN_MINUTES_PCT
+        minutes_ok = minutes_pct is not None and float(minutes_pct) >= min_minutes_pct
         passes_pct = (passes / max_passes) if max_passes > 0 else None
-        passes_ok = max_passes > 0 and passes >= min_passes
+        passes_ok = passes >= min_passes
         enriched.append({
             **player,
             "position_max_passes": max_passes,
             "position_min_passes": round(min_passes, 1),
+            "position_min_minutes_pct": round(min_minutes_pct, 4),
             "passes_pct_of_position": round(passes_pct, 4) if passes_pct is not None else None,
             "eligible_minutes": minutes_ok,
             "eligible_passes": passes_ok,
             "eligible_for_rating": minutes_ok and passes_ok,
         })
     return enriched
-
-
-def _score_for_rank_vs_pool(rank: int, pool_size: int) -> float:
-    if pool_size <= 0:
-        return RATING_SCORE_MID
-    if pool_size == 1:
-        return RATING_SCORE_BEST if rank == 1 else RATING_SCORE_WORST
-    effective_rank = min(max(rank, 1), pool_size)
-    return _rank_to_rating_score(effective_rank, pool_size)
 
 
 def rate_player_vs_eligible_pool(player: dict, eligible_pool: list[dict]) -> dict:
@@ -1203,24 +1347,44 @@ def rate_player_vs_eligible_pool(player: dict, eligible_pool: list[dict]) -> dic
         return {**player, **compared}
 
     pool_size = len(eligible_pool)
+    shrunk_values = _build_shrunk_metric_values(eligible_pool, tuple(RANK_DISPLAY_KEYS))
+    metric_ranks = _metric_ranks_for_pool(eligible_pool, shrunk_values)
 
     def rank_for_key(key: str) -> dict:
         value = player.get(key)
-        rank = 1 + sum(1 for peer in eligible_pool if (peer.get(key) or 0) > (value or 0))
+        pool_vals = [float(p.get(key) or 0) for p in eligible_pool]
+        rank = 1 + sum(1 for peer_value in pool_vals if peer_value > (value or 0))
         return {"rank": rank, "total": pool_size, "value": value}
 
-    metric_ranks = {key: rank_for_key(key) for key in RANK_DISPLAY_KEYS}
-    metric_scores = [
-        _score_for_rank_vs_pool(metric_ranks[key]["rank"], pool_size)
-        for key in RATING_METRIC_KEYS
-    ]
-    pass_rating = round(sum(metric_scores) / len(metric_scores), 4) if metric_scores else RATING_SCORE_MID
+    player_metric_ranks = {key: rank_for_key(key) for key in RANK_DISPLAY_KEYS}
+    player_shrunk = {
+        key: _shrink_metric_value(
+            player.get(key),
+            _shrinkage_sample_for_metric(key, player),
+            [float(p.get(key) or 0) for p in eligible_pool],
+            k=_shrinkage_k_for_metric(key),
+        )
+        for key in RANK_DISPLAY_KEYS
+    }
+    player_shrunk_values = {str(player["player_id"]): player_shrunk}
+    pass_rating = _pass_rating_from_dimensions(
+        eligible_pool,
+        {**shrunk_values, **player_shrunk_values},
+        {**player, **{k: player_shrunk[k] for k in player_shrunk}},
+        pool_size,
+    )
 
     section_ratings: dict[str, float] = {}
     section_rating_ranks: dict[str, dict] = {}
     for section_key, keys in SECTION_RATING_GROUPS.items():
         section_scores = [
-            _score_for_rank_vs_pool(metric_ranks[key]["rank"], pool_size)
+            _metric_rating_score(
+                eligible_pool,
+                {**shrunk_values, **player_shrunk_values},
+                {**player, **{k: player_shrunk[k] for k in player_shrunk}},
+                key,
+                pool_size,
+            )
             for key in keys
         ]
         section_value = round(sum(section_scores) / len(section_scores), 4) if section_scores else RATING_SCORE_MID
@@ -1236,7 +1400,7 @@ def rate_player_vs_eligible_pool(player: dict, eligible_pool: list[dict]) -> dic
         }
 
     pass_rank = 1 + sum(1 for peer in eligible_pool if (peer.get("pass_rating") or 0) > pass_rating)
-    metric_ranks["pass_rating"] = {
+    player_metric_ranks["pass_rating"] = {
         "rank": pass_rank,
         "total": pool_size,
         "value": pass_rating,
@@ -1247,7 +1411,7 @@ def rate_player_vs_eligible_pool(player: dict, eligible_pool: list[dict]) -> dic
         "pass_rating": pass_rating,
         "rating_is_solo": False,
         "rating_is_compared": True,
-        "metric_ranks": metric_ranks,
+        "metric_ranks": player_metric_ranks,
         "section_ratings": section_ratings,
         "section_rating_ranks": section_rating_ranks,
     }
@@ -1262,18 +1426,15 @@ def _rate_single_player(player: dict) -> dict[str, object]:
             "total": 1,
             "value": player.get(key),
         }
-    metric_scores = [_rank_to_rating_score(1, 1) for _ in RATING_METRIC_KEYS]
-    pass_rating = round(sum(metric_scores) / len(metric_scores), 4) if metric_scores else RATING_SCORE_MID
+    pass_rating = RATING_SCORE_MID
     section_ratings: dict[str, float] = {}
     section_rating_ranks: dict[str, dict] = {}
     for section_key, keys in SECTION_RATING_GROUPS.items():
-        section_scores = [_rank_to_rating_score(1, 1) for _ in keys]
-        section_value = round(sum(section_scores) / len(section_scores), 4) if section_scores else RATING_SCORE_MID
-        section_ratings[section_key] = section_value
+        section_ratings[section_key] = RATING_SCORE_MID
         section_rating_ranks[section_key] = {
             "rank": 1,
             "total": 1,
-            "value": section_value,
+            "value": RATING_SCORE_MID,
         }
     metric_ranks["pass_rating"] = {
         "rank": 1,
@@ -1293,18 +1454,13 @@ def _rate_position_pool(pos_players: list[dict]) -> list[dict]:
     pool_size = len(pos_players)
     if pool_size == 0:
         return []
-    metric_ranks = _metric_ranks_for_pool(pos_players)
-    section_scores = _section_ratings_for_pool(pos_players, pool_size)
+    shrunk_values = _build_shrunk_metric_values(pos_players, tuple(RANK_DISPLAY_KEYS))
+    metric_ranks = _metric_ranks_for_pool(pos_players, shrunk_values)
+    section_scores = _section_ratings_for_pool(pos_players, pool_size, shrunk_values)
     section_rating_ranks = _section_rating_ranks_for_pool(section_scores, pool_size)
-    scores: dict[str, list[float]] = {p["player_id"]: [] for p in pos_players}
-    for key in RATING_METRIC_KEYS:
-        ordered = sorted(pos_players, key=lambda p: p.get(key, 0) or 0, reverse=True)
-        for rank, player in enumerate(ordered, start=1):
-            scores[player["player_id"]].append(_rank_to_rating_score(rank, pool_size))
     pool_entries: list[dict] = []
     for player in pos_players:
-        vals = scores[player["player_id"]]
-        pass_rating = round(sum(vals) / len(vals), 4) if vals else 0.0
+        pass_rating = _pass_rating_from_dimensions(pos_players, shrunk_values, player, pool_size)
         pool_entries.append({
             **player,
             "pass_rating": pass_rating,
@@ -1581,7 +1737,7 @@ def build_analytics(
             "player_id": pid,
             "player_name": player["name"],
             "position": player.get("position", "—"),
-            "position_group": position_group(player.get("position")),
+            "position_group": rating_position_group(player.get("position")),
             "team": mins.get("team", "—"),
             "minutes": mins.get("minutes"),
             "minutes_pct": pct,

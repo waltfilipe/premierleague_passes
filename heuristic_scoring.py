@@ -102,7 +102,11 @@ def shorten_position(position: str | None) -> str:
 POSITION_GROUPS_ORDER = (
     "Zagueiros",
     "Laterais",
-    "Meio-campistas",
+    "CDM",
+    "CM",
+    "RCM",
+    "LCM",
+    "CAM",
     "Extremos",
     "Atacantes",
 )
@@ -138,14 +142,35 @@ POSITION_GROUP_LABELS: dict[str, str] = {
     "Zagueiros": "Zagueiro",
     "Laterais": "Lateral",
     "Meio-campistas": "Meio-campista",
+    "CDM": "Volante",
+    "CM": "Meia central",
+    "RCM": "Meia central direito",
+    "LCM": "Meia central esquerdo",
+    "CAM": "Meia ofensivo",
     "Extremos": "Extremo",
     "Atacantes": "Atacante",
+}
+
+_RATING_MIDFIELD_TO_GROUP: dict[str, str] = {
+    "CAM": "CAM",
+    "CDM": "CDM",
+    "RDM": "CDM",
+    "LDM": "CDM",
+    "CM": "CM",
+    "DM": "CM",
+    "RCM": "RCM",
+    "LCM": "LCM",
 }
 
 _GROUP_COLORS = {
     "Zagueiros": "#60a5fa",
     "Laterais": "#34d399",
     "Meio-campistas": "#fbbf24",
+    "CDM": "#a78bfa",
+    "CM": "#fbbf24",
+    "RCM": "#f59e0b",
+    "LCM": "#eab308",
+    "CAM": "#fb923c",
     "Extremos": "#f472b6",
     "Atacantes": "#f87171",
 }
@@ -166,6 +191,16 @@ def position_group(short_pos: str | None) -> str | None:
     if not short_pos or short_pos in ("GK", "—"):
         return None
     return _POSITION_TO_GROUP.get(short_pos, "Meio-campistas")
+
+
+def rating_position_group(short_pos: str | None) -> str | None:
+    """Finer position pool for pass ratings (splits midfield roles)."""
+    if not short_pos or short_pos in ("GK", "—"):
+        return None
+    pos = str(short_pos).strip().upper()
+    if pos in _RATING_MIDFIELD_TO_GROUP:
+        return _RATING_MIDFIELD_TO_GROUP[pos]
+    return _POSITION_TO_GROUP.get(pos, "CM")
 
 
 def is_outfield_position(short_pos: str | None) -> bool:

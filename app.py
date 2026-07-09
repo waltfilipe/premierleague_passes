@@ -62,6 +62,7 @@ POSITION_GROUPS_ORDER = pe.POSITION_GROUPS_ORDER
 RATING_TOP_N = pe.RATING_TOP_N
 RATING_MIN_MINUTES_PCT = pe.RATING_MIN_MINUTES_PCT
 RATING_MIN_PASSES_PCT = pe.RATING_MIN_PASSES_PCT
+RATING_ELIGIBILITY_PERCENTILE = pe.RATING_ELIGIBILITY_PERCENTILE
 SIMILARITY_TOP_K = 10
 SIMILARITY_SELECT_SB_KEY = "similarity_player_select_sb"
 SIMILARITY_SELECT_SA_KEY = "similarity_player_select_sa"
@@ -1511,9 +1512,10 @@ def render_map_section(
 def render_rating_section(rated: list[dict], *, selected_player_id: str | None) -> None:
     st.markdown(
         '<div class="pres-card"><h4>Ranking por grupo de posição</h4>'
-        "<p>Rating = média das notas por métrica no grupo (1º = 9,0 · mediano = 6,0 · último = 3,0). "
-        f"Elegível: &gt;{int(RATING_MIN_MINUTES_PCT * 100)}% dos minutos e ≥{int(RATING_MIN_PASSES_PCT * 100)}% "
-        "dos passes do grupo. Clique em um jogador para abrir no Dashboard.</p></div>",
+        "<p>Rating = média de 6 dimensões (60% eficiência · 40% volume), com shrinkage e blend rank/percentil. "
+        "Escala: 1º = 9,0 · mediano = 6,0 · último = 3,0. "
+        f"Elegível: minutos e passes ≥ P25 do grupo (referência P{RATING_ELIGIBILITY_PERCENTILE}). "
+        "Clique em um jogador para abrir no Dashboard.</p></div>",
         unsafe_allow_html=True,
     )
     render_rating_board(_rating_groups_from_rated(rated), selected_player_id=selected_player_id)
