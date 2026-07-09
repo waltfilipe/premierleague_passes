@@ -31,7 +31,13 @@ from comparison_config import (
     normalize_tier_model,
     normalize_xt_surface_mode,
 )
-from heuristic_scoring import POSITION_GROUPS_ORDER, is_outfield_position, position_group, rating_position_group
+from heuristic_scoring import POSITION_GROUPS_ORDER, is_outfield_position, position_group
+
+try:
+    from heuristic_scoring import rating_position_group
+except ImportError:
+    def rating_position_group(short_pos: str | None) -> str | None:
+        return position_group(short_pos)
 
 try:
     from sofascore_positions import normalize_sofascore_position, resolve_match_positions
@@ -51,7 +57,7 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 39
+DATA_CACHE_VERSION = 40
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
