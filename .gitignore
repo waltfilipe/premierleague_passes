@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.streamlit/
+.venv/
+venv/
+.env
+data/sofascore/
+passbr*/
