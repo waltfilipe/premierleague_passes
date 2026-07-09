@@ -101,36 +101,35 @@ def shorten_position(position: str | None) -> str:
 
 POSITION_GROUPS_ORDER = (
     "Zagueiros",
-    "Laterais",
-    "CDM",
-    "CM",
-    "RCM",
-    "LCM",
-    "CAM",
-    "Extremos",
+    "Laterais-direitos",
+    "Laterais-esquerdos",
+    "Meio-campistas",
+    "Meias-ofensivos",
+    "Extremos-direitos",
+    "Extremos-esquerdos",
     "Atacantes",
 )
 
-_POSITION_TO_GROUP: dict[str, str] = {
+_RATING_POSITION_TO_GROUP: dict[str, str] = {
     "CB": "Zagueiros",
     "RCB": "Zagueiros",
     "LCB": "Zagueiros",
-    "RB": "Laterais",
-    "LB": "Laterais",
-    "RWB": "Laterais",
-    "LWB": "Laterais",
+    "RB": "Laterais-direitos",
+    "RWB": "Laterais-direitos",
+    "LB": "Laterais-esquerdos",
+    "LWB": "Laterais-esquerdos",
     "CM": "Meio-campistas",
     "CDM": "Meio-campistas",
-    "CAM": "Meio-campistas",
     "RCM": "Meio-campistas",
     "LCM": "Meio-campistas",
     "RDM": "Meio-campistas",
     "LDM": "Meio-campistas",
     "DM": "Meio-campistas",
-    "RW": "Extremos",
-    "LW": "Extremos",
-    "RM": "Extremos",
-    "LM": "Extremos",
+    "CAM": "Meias-ofensivos",
+    "RW": "Extremos-direitos",
+    "RM": "Extremos-direitos",
+    "LW": "Extremos-esquerdos",
+    "LM": "Extremos-esquerdos",
     "ST": "Atacantes",
     "CF": "Atacantes",
     "SS": "Atacantes",
@@ -138,40 +137,27 @@ _POSITION_TO_GROUP: dict[str, str] = {
     "LCF": "Atacantes",
 }
 
+_POSITION_TO_GROUP = dict(_RATING_POSITION_TO_GROUP)
+
 POSITION_GROUP_LABELS: dict[str, str] = {
     "Zagueiros": "Zagueiro",
-    "Laterais": "Lateral",
+    "Laterais-direitos": "Lateral direito",
+    "Laterais-esquerdos": "Lateral esquerdo",
     "Meio-campistas": "Meio-campista",
-    "CDM": "Volante",
-    "CM": "Meia central",
-    "RCM": "Meia central direito",
-    "LCM": "Meia central esquerdo",
-    "CAM": "Meia ofensivo",
-    "Extremos": "Extremo",
+    "Meias-ofensivos": "Meia ofensivo",
+    "Extremos-direitos": "Extremo direito",
+    "Extremos-esquerdos": "Extremo esquerdo",
     "Atacantes": "Atacante",
-}
-
-_RATING_MIDFIELD_TO_GROUP: dict[str, str] = {
-    "CAM": "CAM",
-    "CDM": "CDM",
-    "RDM": "CDM",
-    "LDM": "CDM",
-    "CM": "CM",
-    "DM": "CM",
-    "RCM": "RCM",
-    "LCM": "LCM",
 }
 
 _GROUP_COLORS = {
     "Zagueiros": "#60a5fa",
-    "Laterais": "#34d399",
+    "Laterais-direitos": "#34d399",
+    "Laterais-esquerdos": "#2dd4bf",
     "Meio-campistas": "#fbbf24",
-    "CDM": "#a78bfa",
-    "CM": "#fbbf24",
-    "RCM": "#f59e0b",
-    "LCM": "#eab308",
-    "CAM": "#fb923c",
-    "Extremos": "#f472b6",
+    "Meias-ofensivos": "#fb923c",
+    "Extremos-direitos": "#f472b6",
+    "Extremos-esquerdos": "#e879f9",
     "Atacantes": "#f87171",
 }
 
@@ -186,22 +172,18 @@ def position_group_label(group: str | None) -> str:
     return POSITION_GROUP_LABELS.get(text, text)
 
 
-def position_group(short_pos: str | None) -> str | None:
-    """Map StatsBomb short position to aggregated group; None for goalkeepers."""
-    if not short_pos or short_pos in ("GK", "—"):
-        return None
-    return _POSITION_TO_GROUP.get(short_pos, "Meio-campistas")
-
-
 def rating_position_group(short_pos: str | None) -> str | None:
-    """Finer position pool for pass ratings (splits midfield roles)."""
+    """Map short position to rating pool group; None for goalkeepers."""
     if not short_pos or short_pos in ("GK", "—"):
         return None
     pos = str(short_pos).strip().upper()
-    if pos in _RATING_MIDFIELD_TO_GROUP:
-        return _RATING_MIDFIELD_TO_GROUP[pos]
-    return _POSITION_TO_GROUP.get(pos, "CM")
+    return _RATING_POSITION_TO_GROUP.get(pos, "Meio-campistas")
+
+
+def position_group(short_pos: str | None) -> str | None:
+    """Alias for rating pool group (legacy callers)."""
+    return rating_position_group(short_pos)
 
 
 def is_outfield_position(short_pos: str | None) -> bool:
-    return position_group(short_pos) is not None
+    return rating_position_group(short_pos) is not None
