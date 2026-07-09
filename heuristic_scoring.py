@@ -103,7 +103,8 @@ POSITION_GROUPS_ORDER = (
     "Zagueiros",
     "Laterais-direitos",
     "Laterais-esquerdos",
-    "Meio-campistas",
+    "Meio-campistas-centrais",
+    "Meio-campistas-laterais",
     "Meias-ofensivos",
     "Extremos-direitos",
     "Extremos-esquerdos",
@@ -118,13 +119,13 @@ _RATING_POSITION_TO_GROUP: dict[str, str] = {
     "RWB": "Laterais-direitos",
     "LB": "Laterais-esquerdos",
     "LWB": "Laterais-esquerdos",
-    "CM": "Meio-campistas",
-    "CDM": "Meio-campistas",
-    "RCM": "Meio-campistas",
-    "LCM": "Meio-campistas",
-    "RDM": "Meio-campistas",
-    "LDM": "Meio-campistas",
-    "DM": "Meio-campistas",
+    "CM": "Meio-campistas-centrais",
+    "CDM": "Meio-campistas-centrais",
+    "DM": "Meio-campistas-centrais",
+    "RCM": "Meio-campistas-laterais",
+    "LCM": "Meio-campistas-laterais",
+    "RDM": "Meio-campistas-laterais",
+    "LDM": "Meio-campistas-laterais",
     "CAM": "Meias-ofensivos",
     "RW": "Extremos-direitos",
     "RM": "Extremos-direitos",
@@ -143,7 +144,8 @@ POSITION_GROUP_LABELS: dict[str, str] = {
     "Zagueiros": "Zagueiro",
     "Laterais-direitos": "Lateral direito",
     "Laterais-esquerdos": "Lateral esquerdo",
-    "Meio-campistas": "Meio-campista",
+    "Meio-campistas-centrais": "Meio-campista central",
+    "Meio-campistas-laterais": "Meio-campista lateral",
     "Meias-ofensivos": "Meia ofensivo",
     "Extremos-direitos": "Extremo direito",
     "Extremos-esquerdos": "Extremo esquerdo",
@@ -154,7 +156,8 @@ _GROUP_COLORS = {
     "Zagueiros": "#60a5fa",
     "Laterais-direitos": "#34d399",
     "Laterais-esquerdos": "#2dd4bf",
-    "Meio-campistas": "#fbbf24",
+    "Meio-campistas-centrais": "#fbbf24",
+    "Meio-campistas-laterais": "#f59e0b",
     "Meias-ofensivos": "#fb923c",
     "Extremos-direitos": "#f472b6",
     "Extremos-esquerdos": "#e879f9",
@@ -177,7 +180,7 @@ def rating_position_group(short_pos: str | None) -> str | None:
     if not short_pos or short_pos in ("GK", "—"):
         return None
     pos = str(short_pos).strip().upper()
-    return _RATING_POSITION_TO_GROUP.get(pos, "Meio-campistas")
+    return _RATING_POSITION_TO_GROUP.get(pos, "Meio-campistas-centrais")
 
 
 def position_group(short_pos: str | None) -> str | None:
