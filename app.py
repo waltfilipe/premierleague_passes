@@ -129,7 +129,7 @@ PROGRESSION_DATA_CACHE_VERSION = pge.DATA_CACHE_VERSION
 PROGRESSION_SCOUT_SECTION_SPECS = pge.PROGRESSION_SCOUT_SECTION_SPECS
 PROGRESSION_PARTICIPATION_KEYS = pge.PROGRESSION_PARTICIPATION_KEYS
 pg_compute_progression_ratings = pge.compute_progression_ratings
-pg_rate_progression_player_vs_eligible_pool = pge.rate_progression_player_vs_eligible_pool
+pg_build_progression_dashboard_player = pge.build_progression_dashboard_player
 pg_analyst_metric_label = pge.analyst_metric_label
 pg_metric_tooltip = pge.metric_tooltip
 pg_rank_in_group_label = pge.rank_in_group_label
@@ -1350,6 +1350,49 @@ def load_dribbles_grouped(_cache_version: int = CARRIES_DATA_CACHE_VERSION):
     return ce_load_dribbles_grouped(_cache_version)
 
 
+@st.cache_data(show_spinner=False)
+def load_ratings_bundle(
+    _pass_cache: int = DATA_CACHE_VERSION,
+    _carry_cache: int = CARRIES_DATA_CACHE_VERSION,
+):
+    """Compute pass, carry and progression ratings once per cache version."""
+    _, all_players = load_analytics()
+    _, carries_players = load_carries_analytics()
+    rated, players_by_id, pool_by_position = compute_pass_ratings(all_players)
+    carry_rated, carries_by_id, carries_pool_by_position = ce_compute_pass_ratings(carries_players)
+    progression_rated, progression_by_id, progression_pool_by_position = pg_compute_progression_ratings(
+        all_players,
+        carries_players,
+        pass_by_id=players_by_id,
+        carry_by_id=carries_by_id,
+    )
+    return (
+        rated,
+        players_by_id,
+        pool_by_position,
+        carry_rated,
+        carries_by_id,
+        carries_pool_by_position,
+        progression_rated,
+        progression_by_id,
+        progression_pool_by_position,
+    )
+
+
+@st.cache_data(show_spinner=False)
+def load_core_data(
+    _pass_cache: int = DATA_CACHE_VERSION,
+    _carry_cache: int = CARRIES_DATA_CACHE_VERSION,
+):
+    """Passes and carries event data used by dashboard maps."""
+    _, all_players = load_analytics()
+    _, carries_players = load_carries_analytics()
+    passes_by_player = load_passes()
+    carries_by_player = load_carries_grouped()
+    dribbles_by_player = load_dribbles_grouped()
+    return all_players, carries_players, passes_by_player, carries_by_player, dribbles_by_player
+
+
 def _norm(s: str) -> str:
     return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().lower()
 
@@ -2416,19 +2459,36 @@ def render_progression_player_layout(player: dict, passes, carries) -> None:
 
 def render_progression_dashboard_content(
     player_id: str | None,
-    players_by_id: dict[str, dict],
-    pool_by_position: dict[str, list[dict]],
+    progression_by_id: dict[str, dict],
+    pass_by_id: dict[str, dict],
+    carry_by_id: dict[str, dict],
+    progression_pool_by_position: dict[str, list[dict]],
+    pass_pool_by_position: dict[str, list[dict]],
+    carry_pool_by_position: dict[str, list[dict]],
     passes_by_player: dict,
     carries_by_player: dict,
 ) -> None:
-    player = _resolve_dashboard_player(
-        player_id,
-        players_by_id,
-        pool_by_position,
-        rate_fn=pg_rate_progression_player_vs_eligible_pool,
-    )
-    if player is None:
+    if not player_id:
         return
+
+    player = progression_by_id.get(player_id)
+    if player is None or not player.get("eligible_for_rating"):
+        pass_player = _resolve_dashboard_player(player_id, pass_by_id, pass_pool_by_position)
+        carry_player = _resolve_dashboard_player(
+            player_id,
+            carry_by_id,
+            carry_pool_by_position,
+            rate_fn=ce_rate_player_vs_eligible_pool,
+        )
+        if pass_player is None and carry_player is None:
+            return
+        base = dict(player or pass_player or carry_player or {})
+        player = pg_build_progression_dashboard_player(
+            base,
+            pass_player,
+            carry_player,
+            progression_player=progression_by_id.get(player_id),
+        )
     render_progression_player_layout(
         player,
         passes_by_player.get(player_id),
@@ -2437,9 +2497,12 @@ def render_progression_dashboard_content(
 
 
 def render_progression_map_section(
-    all_players: list[dict],
-    players_by_id: dict[str, dict],
-    pool_by_position: dict[str, list[dict]],
+    progression_by_id: dict[str, dict],
+    pass_by_id: dict[str, dict],
+    carry_by_id: dict[str, dict],
+    progression_pool_by_position: dict[str, list[dict]],
+    pass_pool_by_position: dict[str, list[dict]],
+    carry_pool_by_position: dict[str, list[dict]],
     passes_by_player: dict,
     carries_by_player: dict,
     *,
@@ -2449,8 +2512,12 @@ def render_progression_map_section(
         player_id = st.session_state.get("map_player_id")
     render_progression_dashboard_content(
         player_id,
-        players_by_id,
-        pool_by_position,
+        progression_by_id,
+        pass_by_id,
+        carry_by_id,
+        progression_pool_by_position,
+        pass_pool_by_position,
+        carry_pool_by_position,
         passes_by_player,
         carries_by_player,
     )
@@ -3057,7 +3124,6 @@ def _render_similarity_results_tab(
 def render_similarity_section(
     all_players: list[dict],
     passes_by_player_sb: dict,
-    serie_a_passes: dict,
     carries_by_player_sb: dict,
     carries_players_sb: list[dict],
     *,
@@ -3065,6 +3131,7 @@ def render_similarity_section(
 ) -> None:
     import pandas as pd
 
+    serie_a_passes = load_serie_a_passes()
     title = "Similarity B → A" if sb_to_sa else "Similarity A → B"
     st.subheader(title)
     st.caption(
@@ -3216,29 +3283,19 @@ def main() -> None:
     xt_surface_mode = FIXED_XT_SURFACE_MODE
 
     with st.spinner("Loading data…"):
-        _, all_players = load_analytics(
-            tier_model=tier_model,
-            classification_model=classification_model,
-            xt_surface_mode=xt_surface_mode,
-        )
-        passes_by_player = load_passes(
-            tier_model=tier_model,
-            classification_model=classification_model,
-            xt_surface_mode=xt_surface_mode,
-        )
-        serie_a_passes = load_serie_a_passes()
-        _, carries_players = load_carries_analytics()
-        carries_by_player = load_carries_grouped()
-        dribbles_by_player = load_dribbles_grouped()
+        all_players, carries_players, passes_by_player, carries_by_player, dribbles_by_player = load_core_data()
+        (
+            rated,
+            players_by_id,
+            pool_by_position,
+            carry_rated,
+            carries_by_id,
+            carries_pool_by_position,
+            progression_rated,
+            progression_by_id,
+            progression_pool_by_position,
+        ) = load_ratings_bundle()
 
-    rated, players_by_id, pool_by_position = compute_pass_ratings(all_players)
-    carry_rated, carries_by_id, carries_pool_by_position = ce_compute_pass_ratings(carries_players)
-    progression_rated, progression_by_id, progression_pool_by_position = pg_compute_progression_ratings(
-        all_players,
-        carries_players,
-        pass_by_id=players_by_id,
-        carry_by_id=carries_by_id,
-    )
     selected_player_id = st.session_state.get("map_player_id")
 
     tab_pres, tab_dashboard, tab_ranking, tab_sim_ba, tab_sim_ab = st.tabs(
@@ -3250,19 +3307,25 @@ def main() -> None:
         )
     with tab_dashboard:
         player_id = render_dashboard_player_picker(all_players, players_by_id)
-        dash_progression, dash_passes, dash_carries = st.tabs(
-            ["All Progressions", "Passes", "Carries"],
+        dash_view = st.segmented_control(
+            "Dashboard view",
+            options=["All Progressions", "Passes", "Carries"],
+            default="All Progressions",
+            key="dashboard_view",
         )
-        with dash_progression:
+        if dash_view == "All Progressions":
             render_progression_map_section(
-                progression_rated,
                 progression_by_id,
+                players_by_id,
+                carries_by_id,
                 progression_pool_by_position,
+                pool_by_position,
+                carries_pool_by_position,
                 passes_by_player,
                 carries_by_player,
                 player_id=player_id,
             )
-        with dash_passes:
+        elif dash_view == "Passes":
             render_map_section(
                 all_players,
                 players_by_id,
@@ -3270,9 +3333,9 @@ def main() -> None:
                 passes_by_player,
                 player_id=player_id,
             )
-        with dash_carries:
+        else:
             render_carries_map_section(
-                carries_players,
+                carry_rated,
                 carries_by_id,
                 carries_pool_by_position,
                 carries_by_player,
@@ -3290,7 +3353,6 @@ def main() -> None:
         render_similarity_section(
             all_players,
             passes_by_player,
-            serie_a_passes,
             carries_by_player,
             carries_players,
             sb_to_sa=True,
@@ -3299,7 +3361,6 @@ def main() -> None:
         render_similarity_section(
             all_players,
             passes_by_player,
-            serie_a_passes,
             carries_by_player,
             carries_players,
             sb_to_sa=False,

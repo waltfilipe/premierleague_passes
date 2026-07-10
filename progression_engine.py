@@ -274,6 +274,102 @@ def _attach_source_ratings(
     return enriched
 
 
+def _merge_metric_ranks_from_sources(
+    pass_player: dict | None,
+    carry_player: dict | None,
+) -> dict[str, dict]:
+    metric_ranks: dict[str, dict] = {}
+    if pass_player and isinstance(pass_player.get("metric_ranks"), dict):
+        for key, value in pass_player["metric_ranks"].items():
+            if key == "pass_rating":
+                continue
+            metric_ranks[key] = value
+    if carry_player and isinstance(carry_player.get("metric_ranks"), dict):
+        for key, value in carry_player["metric_ranks"].items():
+            if key == "pass_rating":
+                metric_ranks["carry_rating"] = value
+                continue
+            metric_ranks[f"carry_{key}"] = value
+    return metric_ranks
+
+
+def _merge_section_ratings_from_sources(
+    pass_player: dict | None,
+    carry_player: dict | None,
+) -> tuple[dict[str, float], dict[str, dict]]:
+    section_ratings: dict[str, float] = {}
+    section_rating_ranks: dict[str, dict] = {}
+    if pass_player:
+        for key, value in (pass_player.get("section_ratings") or {}).items():
+            section_ratings[f"pass_{key}"] = value
+        for key, value in (pass_player.get("section_rating_ranks") or {}).items():
+            section_rating_ranks[f"pass_{key}"] = value
+    if carry_player:
+        for key, value in (carry_player.get("section_ratings") or {}).items():
+            section_ratings[f"carry_{key}"] = value
+        for key, value in (carry_player.get("section_rating_ranks") or {}).items():
+            section_rating_ranks[f"carry_{key}"] = value
+    return section_ratings, section_rating_ranks
+
+
+def build_progression_dashboard_player(
+    player: dict,
+    pass_player: dict | None,
+    carry_player: dict | None,
+    *,
+    progression_player: dict | None = None,
+) -> dict:
+    """Align All Progressions card section scores with Passes / Carries tabs."""
+    base = dict(progression_player or player)
+    section_ratings, section_rating_ranks = _merge_section_ratings_from_sources(
+        pass_player,
+        carry_player,
+    )
+    metric_ranks = _merge_metric_ranks_from_sources(pass_player, carry_player)
+    if progression_player and isinstance(progression_player.get("metric_ranks"), dict):
+        prog_ranks = progression_player["metric_ranks"]
+        if "progression_rating" in prog_ranks:
+            metric_ranks["progression_rating"] = prog_ranks["progression_rating"]
+
+    out = {
+        **base,
+        "section_ratings": section_ratings,
+        "section_rating_ranks": section_rating_ranks,
+        "metric_ranks": metric_ranks,
+    }
+    if pass_player:
+        out["pass_rating"] = pass_player.get("pass_rating")
+        out["pass_rating_confidence"] = pass_player.get("rating_confidence")
+        out["pass_rating_percentile"] = pass_player.get("rating_percentile")
+    if carry_player:
+        out["carry_rating"] = carry_player.get("pass_rating")
+        out["carry_rating_confidence"] = carry_player.get("rating_confidence")
+        out["carry_rating_percentile"] = carry_player.get("rating_percentile")
+    if progression_player:
+        out["progression_rating"] = progression_player.get("progression_rating")
+        out["rating_confidence"] = progression_player.get("rating_confidence")
+        out["rating_percentile"] = progression_player.get("rating_percentile")
+        out["rating_dual_elite_badge"] = progression_player.get("rating_dual_elite_badge")
+    return out
+
+
+def _apply_progression_dashboard_ratings(
+    players: list[dict],
+    *,
+    pass_by_id: dict[str, dict],
+    carry_by_id: dict[str, dict],
+) -> list[dict]:
+    return [
+        build_progression_dashboard_player(
+            player,
+            pass_by_id.get(str(player["player_id"])),
+            carry_by_id.get(str(player["player_id"])),
+            progression_player=player,
+        )
+        for player in players
+    ]
+
+
 def attach_dual_elite_badges(
     players: list[dict],
     *,
@@ -329,14 +425,27 @@ def compute_progression_ratings(
         for pid, player in players_by_id.items()
     }
     rated_pool = attach_dual_elite_badges(rated_pool, pass_by_id=pass_by_id, carry_by_id=carry_by_id)
-    for player in rated_pool:
-        players_by_id[player["player_id"]] = {
-            **players_by_id[player["player_id"]],
-            **{k: v for k, v in player.items() if k in {
-                "pass_rating", "carry_rating", "rating_dual_elite_badge",
-                "pass_rating_percentile", "carry_rating_percentile",
-            }},
-        }
+    rated_pool = _apply_progression_dashboard_ratings(
+        rated_pool,
+        pass_by_id=pass_by_id,
+        carry_by_id=carry_by_id,
+    )
+    rated_by_id = {str(p["player_id"]): p for p in rated_pool}
+    players_by_id = {
+        pid: rated_by_id.get(
+            pid,
+            build_progression_dashboard_player(
+                player,
+                pass_by_id.get(pid),
+                carry_by_id.get(pid),
+            ),
+        )
+        for pid, player in players_by_id.items()
+    }
+    pool_by_position = {
+        group: [players_by_id[str(p["player_id"])] for p in pool if str(p["player_id"]) in players_by_id]
+        for group, pool in pool_by_position.items()
+    }
 
     return rated_pool, players_by_id, pool_by_position
 
