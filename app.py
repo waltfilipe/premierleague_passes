@@ -1241,7 +1241,7 @@ st.markdown(
         display: grid;
         grid-template-columns: minmax(220px, 0.92fr) minmax(320px, 1.35fr) minmax(210px, 0.78fr);
         gap: 0.75rem;
-        align-items: stretch;
+        align-items: start;
     }
     @media (max-width: 1100px) {
         .pa-layout { grid-template-columns: 1fr; }
@@ -1251,45 +1251,45 @@ st.markdown(
         flex-direction: column;
         gap: 0;
         min-width: 0;
-        height: 100%;
     }
     .pa-col-score {
         display: flex;
         flex-direction: column;
-        height: 100%;
     }
     .pa-score-stack {
         display: flex;
         flex-direction: column;
-        gap: 0.55rem;
-        height: 100%;
-        flex: 1;
-        min-height: 0;
+        gap: 0.5rem;
+        height: var(--pa-card-h);
+        min-height: var(--pa-card-h);
+        max-height: var(--pa-card-h);
+        overflow: hidden;
         box-sizing: border-box;
     }
     .pa-col-pillars {
         min-width: 0;
-        height: 100%;
     }
     .pa-pillars-card {
         display: flex;
         flex-direction: column;
         padding: 0.75rem 0.7rem 0.7rem;
         margin-bottom: 0;
-        height: 100%;
-        flex: 1;
-        min-height: 0;
+        height: var(--pa-card-h);
+        min-height: var(--pa-card-h);
+        max-height: var(--pa-card-h);
+        overflow: hidden;
         box-sizing: border-box;
     }
     .pa-identity-card {
-        padding: 0.95rem 1rem 0.85rem;
+        padding: 0.9rem 1rem 0.8rem;
         margin-bottom: 0;
         display: flex;
         flex-direction: column;
-        gap: 0.55rem;
-        height: 100%;
-        flex: 1;
-        min-height: 0;
+        gap: 0.5rem;
+        height: var(--pa-card-h);
+        min-height: var(--pa-card-h);
+        max-height: var(--pa-card-h);
+        overflow: hidden;
         box-sizing: border-box;
     }
     .pa-identity-top {
@@ -1347,14 +1347,15 @@ st.markdown(
         gap: 0;
         flex: 1;
         min-height: 0;
-        justify-content: space-between;
+        overflow-y: auto;
+        justify-content: flex-start;
     }
     .pa-part-row {
         display: flex;
         justify-content: space-between;
         align-items: baseline;
         gap: 0.75rem;
-        padding: 0.28rem 0;
+        padding: 0.22rem 0;
         border-bottom: 1px solid #243049;
     }
     .pa-part-row:last-child { border-bottom: none; padding-bottom: 0; }
@@ -1436,15 +1437,17 @@ st.markdown(
     }
     .pa-col-score .radar-card {
         margin-bottom: 0;
-        padding: 0.65rem 0.7rem 0.7rem;
+        padding: 0.55rem 0.65rem 0.6rem;
         flex: 1;
         display: flex;
         flex-direction: column;
         min-height: 0;
+        overflow: hidden;
     }
     .pa-col-score .radar-card .radar-card-body {
         flex: 1;
         min-height: 0;
+        overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1492,10 +1495,15 @@ st.markdown(
         margin-bottom: 0;
     }
     .pa-pillars-stack .grade-accordion summary {
-        padding: 0.55rem 0.65rem;
+        padding: 0.5rem 0.6rem;
     }
     .pa-pillars-stack .grade-card-title {
-        font-size: 0.82rem;
+        font-size: 0.8rem;
+        line-height: 1.2;
+    }
+    .pa-pillars-stack .grade-card-rank {
+        margin-top: 0.12rem;
+        font-size: 0.68rem;
     }
     .pa-pillars-stack .section-rating-pill {
         font-size: 0.76rem;
@@ -1749,6 +1757,16 @@ def _section_rating_pill_html(score: float | None) -> str:
         f'<span class="section-rating-pill" style="background:{bg};color:{txt}">'
         f"{html.escape(fmt_rating_score(score))}</span>"
     )
+
+
+def _player_analysis_card_height_px(n_sections: int, *, n_groups: int = 2) -> int:
+    """Match the pillars column height (closed accordions + group labels)."""
+    card_pad = 24
+    group_labels = 20 * n_groups
+    accordion_row = 48
+    section_gaps = max(0, n_sections - 1) * 6
+    group_gap = 10
+    return card_pad + group_labels + (n_sections * accordion_row) + section_gaps + group_gap
 
 
 def _player_options(rated: list[dict]) -> list[tuple[str, str, str, str]]:
@@ -2683,6 +2701,8 @@ def _build_player_analysis_layout_html(
     rating_slot_fn=None,
 ) -> str:
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
+    card_h = _player_analysis_card_height_px(len(scout_section_specs))
+    layout_style = f"--pa-card-h: {card_h}px;"
     rating_panel = _player_analysis_rating_panel_html(player, metric_ranks)
     radar_card = _pillar_radar_card_html(
         player,
@@ -2690,7 +2710,7 @@ def _build_player_analysis_layout_html(
         pillar_labels=pillar_labels or _PROGRESSION_PILLAR_RADAR_LABELS,
         confidence_minutes=confidence_minutes,
         confidence_passes=confidence_passes,
-        radar_figsize=(4.0, 4.0),
+        radar_figsize=(3.5, 3.5),
         line_color=PA_RADAR_LINE_COLOR,
         fill_color=PA_RADAR_FILL_COLOR,
     )
@@ -2713,7 +2733,7 @@ def _build_player_analysis_layout_html(
         fmt_stat_fn=fmt_stat_fn,
     )
     return (
-        '<div class="pa-layout">'
+        f'<div class="pa-layout" style="{layout_style}">'
         f'<div class="pa-col pa-col-identity">{identity_card}</div>'
         '<div class="pa-col pa-col-score">'
         '<div class="pa-score-stack">'
@@ -3369,6 +3389,8 @@ def render_player_analysis_section(
     st.markdown('<div class="pa-shell">', unsafe_allow_html=True)
 
     st.markdown('<div class="pa-toggles">', unsafe_allow_html=True)
+    if st.query_params.get("similar_idx") is not None or st.query_params.get("pa_similar") == "1":
+        st.session_state[PLAYER_ANALYSIS_SHOW_SIMILAR_KEY] = True
     toggle_maps, toggle_similar, _ = st.columns([1.1, 1.35, 2.55], gap="small")
     with toggle_maps:
         show_maps = st.toggle("Show progression maps", key=PLAYER_ANALYSIS_SHOW_MAPS_KEY)
@@ -3414,7 +3436,7 @@ def render_player_analysis_section(
             carries_by_player=carries_by_player,
             carries_players_sb=carries_players,
             all_players=all_players,
-            pick_key="pa_similar_pick",
+            pick_key=PLAYER_ANALYSIS_SIMILAR_PICK_KEY,
         )
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -3949,10 +3971,12 @@ function pickSimilar(idx) {{
   try {{
     const base = window.parent !== window ? window.parent : window;
     const url = new URL(base.location.href);
+    url.searchParams.set("pa_similar", "1");
     url.searchParams.set("similar_idx", String(idx));
     base.location.href = url.toString();
   }} catch (e) {{
     const url = new URL(window.location.href);
+    url.searchParams.set("pa_similar", "1");
     url.searchParams.set("similar_idx", String(idx));
     window.location.href = url.toString();
   }}

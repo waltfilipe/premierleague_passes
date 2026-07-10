@@ -410,6 +410,7 @@ def _merge_metric_ranks_from_sources(
     if pass_player and isinstance(pass_player.get("metric_ranks"), dict):
         for key, value in pass_player["metric_ranks"].items():
             if key == "pass_rating":
+                metric_ranks["pass_rating"] = value
                 continue
             metric_ranks[key] = value
     if carry_player and isinstance(carry_player.get("metric_ranks"), dict):

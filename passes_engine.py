@@ -189,10 +189,11 @@ METRIC_LABELS: dict[str, str] = {
     "positive_dxt_pct": "% Passes with Positive ΔxT",
     "dxt_gt_01_pct": "% High Threat Passes",
     "construction_aip": "Build-Up Impact Passes",
+    "construction_aip_p90": "Build-Up Impact Passes (Per game)",
     "construction_aip_per_pass": "Build-Up Threat / Pass",
     "aggression_aip": "Attacking Impact Passes",
+    "aggression_aip_p90": "Attacking Impact Passes (Per game)",
     "aggression_aip_per_pass": "Attacking Threat / Pass",
-    "aggression_aip_p90": "Attacking Impact Passes p90",
     "progressive_passes_p90": "Progressive Passes p90",
     "progressive_passes": "Progressive Passes",
     "final_third_passes_p90": "Final Third Passes p90",
@@ -212,8 +213,10 @@ ANALYST_METRIC_LABELS: dict[str, str] = {
     "long_impact_passes": "Impact Long Balls",
     "long_impact_per_long_pass": "Average Impact",
     "construction_aip": "Build-Up Impact Passes",
+    "construction_aip_p90": "Build-Up Impact Passes (Per game)",
     "construction_aip_per_pass": "Build-Up Threat (Per pass)",
     "aggression_aip": "Attacking Impact Passes",
+    "aggression_aip_p90": "Attacking Impact Passes (Per game)",
     "aggression_aip_per_pass": "Attacking Threat (Per pass)",
     "minutes": "Minutes played",
     "passes_completed": "Completed passes",
@@ -233,8 +236,10 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "long_impact_passes": "Long balls that generated threat in the xT model.",
     "long_impact_per_long_pass": "Share of long balls that become impact long balls.",
     "construction_aip": "Accumulated threat on build-up passes (defensive and middle third).",
+    "construction_aip_p90": "Build-up impact passes per 90 minutes.",
     "construction_aip_per_pass": "Threat efficiency on build-up passes.",
     "aggression_aip": "Threat on attacking-zone passes (final third / penetration).",
+    "aggression_aip_p90": "Attacking impact passes per 90 minutes.",
     "aggression_aip_per_pass": "Threat efficiency on attacking-zone passes.",
     "minutes": "Minutes played in the analyzed sample.",
     "passes_completed": "Total completed passes.",
@@ -259,12 +264,12 @@ RELATIVE_METRIC_KEYS: tuple[str, ...] = (
 )
 
 CONSTRUCTION_METRIC_KEYS: tuple[str, ...] = (
-    "construction_aip",
+    "construction_aip_p90",
     "construction_aip_per_pass",
 )
 
 AGGRESSION_METRIC_KEYS: tuple[str, ...] = (
-    "aggression_aip",
+    "aggression_aip_p90",
     "aggression_aip_per_pass",
 )
 
@@ -1076,6 +1081,7 @@ def _derive_rates(stats: dict, minutes: float | None) -> dict:
     out["phi_p90"] = _per90(stats.get("high_impact_passes", 0), minutes)
     out["dxt_p90"] = _per90(stats.get("sum_dxt_passes", 0), minutes)
     out["aggression_aip_p90"] = _per90(stats.get("aggression_aip", 0), minutes)
+    out["construction_aip_p90"] = _per90(stats.get("construction_aip", 0), minutes)
     out["progressive_passes_p90"] = _per90(stats.get("progressive_passes", 0), minutes)
     out["final_third_passes_p90"] = _per90(stats.get("final_third_passes", 0), minutes)
     return out
