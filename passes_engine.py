@@ -1137,6 +1137,29 @@ def _eligibility_floor_percentile() -> float:
 
 
 def _shrinkage_sample_for_metric(key: str, player: dict) -> float:
+    if key.startswith("carry_"):
+        carry_key = key.removeprefix("carry_")
+        if carry_key.endswith("_p90") or carry_key in {"construction_aip", "aggression_aip"}:
+            return float(player.get("carry_minutes") or player.get("minutes") or 0)
+        if carry_key.startswith("construction"):
+            return float(
+                player.get("carry_construction_passes")
+                or player.get("carry_passes_completed")
+                or player.get("carries_total")
+                or 0
+            )
+        if carry_key.startswith("aggression"):
+            return float(
+                player.get("carry_aggression_passes")
+                or player.get("carry_passes_completed")
+                or player.get("carries_total")
+                or 0
+            )
+        return float(
+            player.get("carry_passes_completed")
+            or player.get("carries_total")
+            or 0
+        )
     if key.endswith("_p90") or key in {"construction_aip", "aggression_aip"}:
         return float(player.get("minutes") or 0)
     if key.startswith("construction"):
