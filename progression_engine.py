@@ -14,6 +14,8 @@ from heuristic_scoring import POSITION_GROUPS_ORDER
 DATA_CACHE_VERSION = max(pe.DATA_CACHE_VERSION, ce.DATA_CACHE_VERSION)
 DUAL_ELITE_PERCENTILE = 90.0
 
+_progression_thresholds_override: dict[str, dict[str, float]] | None = None
+
 CARRY_METRIC_KEYS: tuple[str, ...] = tuple(
     dict.fromkeys(
         (
@@ -169,6 +171,128 @@ def _progression_shrinkage_sample_for_metric(key: str, player: dict) -> float:
     return float(player.get("passes_completed") or 0)
 
 
+def _enrich_merged_confidence_refs(
+    merged_players: list[dict],
+    pass_by_id: dict[str, dict],
+    carry_by_id: dict[str, dict],
+) -> list[dict]:
+    """Attach per-player pass/carry P25 refs from their standalone rating pools."""
+    enriched: list[dict] = []
+    for player in merged_players:
+        pid = str(player["player_id"])
+        pass_player = pass_by_id.get(pid, {})
+        carry_player = carry_by_id.get(pid, {})
+        updated = dict(player)
+        if pass_player.get("position_p25_passes") is not None:
+            updated["position_p25_passes"] = pass_player["position_p25_passes"]
+        if carry_player.get("position_p25_passes") is not None:
+            updated["carry_position_p25_passes"] = carry_player["position_p25_passes"]
+        enriched.append(updated)
+    return enriched
+
+
+def _thresholds_from_source_pools(
+    pass_by_id: dict[str, dict],
+    carry_by_id: dict[str, dict],
+) -> dict[str, dict[str, float]]:
+    """Use pass-only and carry-only rating pools for confidence references."""
+    by_group_pass: dict[str, list[dict]] = {}
+    by_group_carry: dict[str, list[dict]] = {}
+    for player in pass_by_id.values():
+        if player.get("eligible_for_rating"):
+            by_group_pass.setdefault(str(player.get("position_group") or "—"), []).append(player)
+    for player in carry_by_id.values():
+        if player.get("eligible_for_rating"):
+            by_group_carry.setdefault(str(player.get("position_group") or "—"), []).append(player)
+
+    groups = set(by_group_pass) | set(by_group_carry)
+    out: dict[str, dict[str, float]] = {}
+    for group in groups:
+        pass_players = by_group_pass.get(group, [])
+        carry_players = by_group_carry.get(group, [])
+        if pass_players:
+            passes = [float(p.get("passes_completed") or 0) for p in pass_players]
+            p25_passes = float(np.percentile(passes, 25))
+        else:
+            p25_passes = float(pe.RATING_CONFIDENCE_PASSES)
+        if carry_players:
+            carries = [
+                float(p.get("passes_completed") or p.get("carries_total") or 0)
+                for p in carry_players
+            ]
+            p25_carries = float(np.percentile(carries, 25))
+        else:
+            p25_carries = float(ce.RATING_CONFIDENCE_PASSES)
+        out[group] = {
+            "position_p25_passes": max(p25_passes, 1.0),
+            "carry_position_p25_passes": max(p25_carries, 1.0),
+        }
+    return out
+
+
+def _progression_position_confidence_thresholds(
+    by_group: dict[str, list[dict]],
+) -> dict[str, dict[str, float]]:
+    """P25 pass volume and carry volume per position group for overall confidence."""
+    if _progression_thresholds_override is not None:
+        return {
+            group: _progression_thresholds_override.get(
+                group,
+                {
+                    "position_p25_passes": pe.RATING_CONFIDENCE_PASSES,
+                    "carry_position_p25_passes": ce.RATING_CONFIDENCE_PASSES,
+                },
+            )
+            for group in by_group
+        }
+
+    out: dict[str, dict[str, float]] = {}
+    for group, group_players in by_group.items():
+        if not group_players:
+            continue
+        passes = [float(p.get("passes_completed") or 0) for p in group_players]
+        carries = [
+            float(p.get("carries_total") or p.get("carry_passes_completed") or 0)
+            for p in group_players
+        ]
+        p25_passes = float(np.percentile(passes, 25)) if passes else pe.RATING_CONFIDENCE_PASSES
+        p25_carries = float(np.percentile(carries, 25)) if carries else ce.RATING_CONFIDENCE_PASSES
+        out[group] = {
+            "position_p25_passes": max(p25_passes, 1.0),
+            "carry_position_p25_passes": max(p25_carries, 1.0),
+        }
+    return out
+
+
+def _progression_with_position_confidence_thresholds(
+    player: dict,
+    thresholds_by_group: dict[str, dict[str, float]],
+) -> dict:
+    group = str(player.get("position_group") or "—")
+    th = thresholds_by_group.get(group, {})
+    pass_p25 = player.get("position_p25_passes")
+    carry_p25 = player.get("carry_position_p25_passes")
+    return {
+        **player,
+        "position_p25_passes": round(
+            float(
+                pass_p25
+                if pass_p25 is not None
+                else th.get("position_p25_passes", pe.RATING_CONFIDENCE_PASSES)
+            ),
+            1,
+        ),
+        "carry_position_p25_passes": round(
+            float(
+                carry_p25
+                if carry_p25 is not None
+                else th.get("carry_position_p25_passes", ce.RATING_CONFIDENCE_PASSES)
+            ),
+            1,
+        ),
+    }
+
+
 def _progression_rating_confidence(player: dict) -> float:
     minutes = float(player.get("minutes") or 0)
     passes = float(player.get("passes_completed") or 0)
@@ -177,7 +301,7 @@ def _progression_rating_confidence(player: dict) -> float:
 
     carry_passes = float(player.get("carry_passes_completed") or player.get("carries_total") or 0)
     carry_ref = max(
-        float(player.get("carry_position_p25_passes") or player.get("position_p25_passes") or pe.RATING_CONFIDENCE_PASSES),
+        float(player.get("carry_position_p25_passes") or ce.RATING_CONFIDENCE_PASSES),
         1.0,
     )
     carry_minutes = float(player.get("carry_minutes") or minutes)
@@ -194,6 +318,8 @@ def _progression_rating_context() -> Iterator[None]:
         "RANK_DISPLAY_KEYS": pe.RANK_DISPLAY_KEYS,
         "_shrinkage_sample_for_metric": pe._shrinkage_sample_for_metric,
         "_rating_confidence": pe._rating_confidence,
+        "_position_confidence_thresholds": pe._position_confidence_thresholds,
+        "_with_position_confidence_thresholds": pe._with_position_confidence_thresholds,
     }
     pe.RATING_DIMENSIONS = COMBINED_RATING_DIMENSIONS
     pe.RATING_METRIC_KEYS = COMBINED_RATING_METRIC_KEYS
@@ -201,6 +327,8 @@ def _progression_rating_context() -> Iterator[None]:
     pe.RANK_DISPLAY_KEYS = COMBINED_RANK_DISPLAY_KEYS
     pe._shrinkage_sample_for_metric = _progression_shrinkage_sample_for_metric
     pe._rating_confidence = _progression_rating_confidence
+    pe._position_confidence_thresholds = _progression_position_confidence_thresholds
+    pe._with_position_confidence_thresholds = _progression_with_position_confidence_thresholds
     try:
         yield
     finally:
@@ -405,9 +533,18 @@ def compute_progression_ratings(
     carry_by_id: dict[str, dict],
 ) -> tuple[list[dict], dict[str, dict], dict[str, list[dict]]]:
     """Return combined progression pool, all merged players indexed, and peers by position."""
-    merged_players = build_progression_players(pass_players, carry_players)
-    with _progression_rating_context():
-        rated_pool, players_by_id, pool_by_position = pe.compute_pass_ratings(merged_players)
+    global _progression_thresholds_override
+    merged_players = _enrich_merged_confidence_refs(
+        build_progression_players(pass_players, carry_players),
+        pass_by_id,
+        carry_by_id,
+    )
+    _progression_thresholds_override = _thresholds_from_source_pools(pass_by_id, carry_by_id)
+    try:
+        with _progression_rating_context():
+            rated_pool, players_by_id, pool_by_position = pe.compute_pass_ratings(merged_players)
+    finally:
+        _progression_thresholds_override = None
 
     rated_pool = [_rename_progression_rating_fields(p) for p in rated_pool]
     players_by_id = {
