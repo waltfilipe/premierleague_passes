@@ -52,8 +52,8 @@ ATTACK_LABEL_FONT_FULL = 10.0
 ATTACK_LABEL_FONT_COMPACT = 8.75
 
 COLOR_CARRY = "#94a3b8"
-COLOR_PROGRESSIVE = "#7dd3fc"
-COLOR_HIGHLY_PROGRESSIVE = "#fcd34d"
+COLOR_PROGRESSIVE = "#ef4444"
+COLOR_HIGHLY_PROGRESSIVE = "#f87171"
 CMAP_PASS_DEST = LinearSegmentedColormap.from_list(
     "pass_dest", ["#1a1a2e", "#1e3a8a", "#3b82f6", "#fbbf24", "#ef4444"]
 )

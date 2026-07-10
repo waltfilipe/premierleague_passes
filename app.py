@@ -98,6 +98,7 @@ rate_player_vs_eligible_pool = pe.rate_player_vs_eligible_pool
 enrich_player_eligibility = pe.enrich_player_eligibility
 RATING_CONFIDENCE_MINUTES = getattr(pe, "RATING_CONFIDENCE_MINUTES", 900.0)
 RATING_CONFIDENCE_PASSES = getattr(pe, "RATING_CONFIDENCE_PASSES", 400.0)
+RATING_LOW_SAMPLE_THRESHOLD = getattr(pe, "RATING_LOW_SAMPLE_THRESHOLD", 0.85)
 
 CARRIES_DATA_CACHE_VERSION = ce.DATA_CACHE_VERSION
 CARRIES_SCOUT_SECTION_SPECS = ce.SCOUT_SECTION_SPECS
@@ -156,25 +157,47 @@ def _rating_confidence_value(
     return min(1.0, minutes / confidence_minutes) * min(1.0, passes / pass_ref)
 
 
+def _rating_confidence_for_key(player: dict, rating_key: str = "pass_rating") -> float:
+    confidence_keys = {
+        "pass_rating": "pass_rating_confidence",
+        "carry_rating": "carry_rating_confidence",
+        "progression_rating": "rating_confidence",
+    }
+    conf = player.get(confidence_keys.get(rating_key, "rating_confidence"))
+    if conf is not None:
+        return float(conf)
+    fallback = player.get("rating_confidence")
+    if fallback is not None:
+        return float(fallback)
+    return _rating_confidence_value(player)
+
+
 def _is_low_sample_rating(
     player: dict,
     *,
+    rating_key: str = "pass_rating",
     confidence_minutes: float = RATING_CONFIDENCE_MINUTES,
     confidence_passes: float = RATING_CONFIDENCE_PASSES,
 ) -> bool:
-    return _rating_confidence_value(
-        player,
-        confidence_minutes=confidence_minutes,
-        confidence_passes=confidence_passes,
-    ) < 0.999
+    if rating_key == "progression_rating":
+        pass_conf = _rating_confidence_for_key(player, "pass_rating")
+        carry_conf = _rating_confidence_for_key(player, "carry_rating")
+        combined_confidence = (pass_conf + carry_conf) / 2.0
+        return combined_confidence < RATING_LOW_SAMPLE_THRESHOLD
+    return _rating_confidence_for_key(player, rating_key) < RATING_LOW_SAMPLE_THRESHOLD
 
 
 def _low_sample_tooltip(player: dict) -> str:
     return "Small sample in position group."
 
 
-def _rating_sample_warning_html(player: dict, *, soft: bool = False) -> str:
-    if not _is_low_sample_rating(player):
+def _rating_sample_warning_html(
+    player: dict,
+    *,
+    soft: bool = False,
+    rating_key: str = "pass_rating",
+) -> str:
+    if not _is_low_sample_rating(player, rating_key=rating_key):
         return ""
     tip = html.escape(_low_sample_tooltip(player))
     if soft:
@@ -196,10 +219,15 @@ def _rating_score_value_html(player: dict, *, rating_key: str = "pass_rating") -
     return html.escape(fmt_rating_score(rating_val))
 
 
-def _rating_score_html(player: dict, *, soft_warning: bool = False, rating_key: str = "pass_rating") -> str:
+def _rating_score_html(
+    player: dict,
+    *,
+    soft_warning: bool = False,
+    rating_key: str = "pass_rating",
+) -> str:
     return (
         f"{_rating_score_value_html(player, rating_key=rating_key)}"
-        f"{_rating_sample_warning_html(player, soft=soft_warning)}"
+        f"{_rating_sample_warning_html(player, soft=soft_warning, rating_key=rating_key)}"
     )
 
 
@@ -1192,8 +1220,6 @@ st.title(f"{APP_NAME} · {APP_LEAGUE}")
 RATING_COLUMNS = ["Player", "Team", "Rating"]
 RATING_COLUMNS_OVERALL = ["Player", "Team", "Overall", "Pass", "Carry"]
 SELECTBOX_KEY = "map_player_select"
-CARRIES_SELECTBOX_KEY = "carries_map_player_select"
-PROGRESSION_SELECTBOX_KEY = "progression_map_player_select"
 
 
 def _call_build_analytics(
@@ -1510,6 +1536,8 @@ def _rating_groups_from_rated(
                 "minutes": p.get("minutes"),
                 "passes_completed": p.get("passes_completed"),
                 "rating_confidence": p.get("rating_confidence"),
+                "pass_rating_confidence": p.get("pass_rating_confidence") or p.get("rating_confidence"),
+                "carry_rating_confidence": p.get("carry_rating_confidence") or p.get("rating_confidence"),
                 "rating_percentile": p.get("rating_percentile"),
                 "rating_uncertainty": p.get("rating_uncertainty"),
                 "rating_pareto_badge": p.get("rating_pareto_badge"),
@@ -1839,7 +1867,7 @@ def _player_rating_slot_html(
     rating_val = player.get(rating_key)
     rating_info = metric_ranks.get(rating_key)
     badges = _rating_badges_html(player)
-    low_sample = _is_low_sample_rating(player)
+    low_sample = _is_low_sample_rating(player, rating_key=rating_key)
     low_cls = " rating-box-low-sample" if low_sample and rating_val is not None else ""
     score_inner = _rating_score_value_html(player, rating_key=rating_key)
     sample_warning = _rating_sample_warning_html(player)
@@ -1981,6 +2009,7 @@ def _build_dashboard_sidebar_html(
     confidence_passes: float = RATING_CONFIDENCE_PASSES,
     rating_key: str = "pass_rating",
     rating_slot_fn=None,
+    show_radar: bool = True,
 ) -> str:
     general_sections: list[tuple[str, str | None, tuple[str, ...], bool]] = [
         ("Participation", None, participation_keys, False),
@@ -2021,7 +2050,7 @@ def _build_dashboard_sidebar_html(
         "confidence_minutes": confidence_minutes,
         "confidence_passes": confidence_passes,
     }
-    radar_card = _pillar_radar_card_html(player, **radar_kwargs)
+    radar_card = _pillar_radar_card_html(player, **radar_kwargs) if show_radar else ""
     pillar_html = "".join(
         _section_grade_accordion_html(
             player,
@@ -2133,21 +2162,35 @@ def render_player_layout(player: dict, passes) -> None:
                 st.pyplot(fig_dest_impact, clear_figure=True, use_container_width=True)
 
     with col_side:
-        render_dashboard_sidebar(player)
+        render_dashboard_sidebar(player, show_radar=False)
 
 
-def render_map_section(
-    all_players: list[dict],
+def _resolve_dashboard_player(
+    player_id: str | None,
     players_by_id: dict[str, dict],
     pool_by_position: dict[str, list[dict]],
-    passes_by_player: dict,
-) -> None:
+    *,
+    rate_fn=rate_player_vs_eligible_pool,
+) -> dict | None:
+    if not player_id or player_id not in players_by_id:
+        return None
+    player = dict(players_by_id[player_id])
+    if not player.get("eligible_for_rating"):
+        group = str(player.get("position_group") or "—")
+        player = rate_fn(player, pool_by_position.get(group, []))
+    return player
+
+
+def render_dashboard_player_picker(
+    all_players: list[dict],
+    players_by_id: dict[str, dict],
+) -> str | None:
     st.caption("Select below or click a player in the Ranking tab.")
 
     options = _player_options(all_players)
     if not options:
-        st.info("No players with passes for the map.")
-        return
+        st.info("No players available for the dashboard.")
+        return None
 
     labels = [o[3] for o in options]
     id_by_label = {o[3]: o[0] for o in options}
@@ -2164,20 +2207,42 @@ def render_map_section(
 
     if not selected_label:
         st.info("Select a player from the list or the Ranking tab.")
-        return
+        return None
 
     player_id = id_by_label[selected_label]
     st.session_state["map_player_id"] = player_id
-    player = dict(players_by_id[player_id])
-    if not player.get("eligible_for_rating"):
-        group = str(player.get("position_group") or "—")
-        player = rate_player_vs_eligible_pool(player, pool_by_position.get(group, []))
-    passes = passes_by_player.get(player_id)
-
-    render_player_layout(player, passes)
+    return player_id
 
 
-def render_carries_player_layout(player: dict, carries, dribbles) -> None:
+def render_passes_dashboard_content(
+    player_id: str | None,
+    players_by_id: dict[str, dict],
+    pool_by_position: dict[str, list[dict]],
+    passes_by_player: dict,
+) -> None:
+    player = _resolve_dashboard_player(player_id, players_by_id, pool_by_position)
+    if player is None:
+        return
+    render_player_layout(player, passes_by_player.get(player_id))
+
+
+def render_map_section(
+    all_players: list[dict],
+    players_by_id: dict[str, dict],
+    pool_by_position: dict[str, list[dict]],
+    passes_by_player: dict,
+    *,
+    player_id: str | None = None,
+) -> None:
+    if player_id is None:
+        render_dashboard_player_picker(all_players, players_by_id)
+        player_id = st.session_state.get("map_player_id")
+    render_passes_dashboard_content(
+        player_id, players_by_id, pool_by_position, passes_by_player,
+    )
+
+
+def _render_carries_player_layout(player: dict, carries, dribbles) -> None:
     team_label = player.get("team", "—")
     player_name = player["player_name"]
     col_maps, col_side = st.columns([1.68, 0.72], gap="small")
@@ -2232,7 +2297,34 @@ def render_carries_player_layout(player: dict, carries, dribbles) -> None:
             fmt_stat_fn=ce_fmt_stat_value,
             confidence_minutes=CARRIES_RATING_CONFIDENCE_MINUTES,
             confidence_passes=CARRIES_RATING_CONFIDENCE_PASSES,
+            show_radar=False,
         )
+
+
+def render_carries_player_layout(player: dict, carries, dribbles) -> None:
+    _render_carries_player_layout(player, carries, dribbles)
+
+
+def render_carries_dashboard_content(
+    player_id: str | None,
+    players_by_id: dict[str, dict],
+    pool_by_position: dict[str, list[dict]],
+    carries_by_player: dict,
+    dribbles_by_player: dict,
+) -> None:
+    player = _resolve_dashboard_player(
+        player_id,
+        players_by_id,
+        pool_by_position,
+        rate_fn=ce_rate_player_vs_eligible_pool,
+    )
+    if player is None:
+        return
+    render_carries_player_layout(
+        player,
+        carries_by_player.get(player_id),
+        dribbles_by_player.get(player_id),
+    )
 
 
 def render_carries_map_section(
@@ -2241,46 +2333,18 @@ def render_carries_map_section(
     pool_by_position: dict[str, list[dict]],
     carries_by_player: dict,
     dribbles_by_player: dict,
+    *,
+    player_id: str | None = None,
 ) -> None:
-    st.caption("Select below or click a player in the Ranking tab.")
-
-    options = _player_options(all_players)
-    if not options:
-        st.info("No players with carries for the map.")
-        return
-
-    labels = [o[3] for o in options]
-    id_by_label = {o[3]: o[0] for o in options}
-    label_by_id = {o[0]: o[3] for o in options}
-
-    _sync_player_selection(
+    if player_id is None:
+        player_id = st.session_state.get("map_player_id")
+    render_carries_dashboard_content(
+        player_id,
         players_by_id,
-        label_by_id,
-        map_id_key="carries_map_player_id",
-        selectbox_key=CARRIES_SELECTBOX_KEY,
+        pool_by_position,
+        carries_by_player,
+        dribbles_by_player,
     )
-
-    selected_label = st.selectbox(
-        "Player",
-        options=labels,
-        key=CARRIES_SELECTBOX_KEY,
-        placeholder="Select a player",
-    )
-
-    if not selected_label:
-        st.info("Select a player from the list or the Ranking tab.")
-        return
-
-    player_id = id_by_label[selected_label]
-    st.session_state["carries_map_player_id"] = player_id
-    player = dict(players_by_id[player_id])
-    if not player.get("eligible_for_rating"):
-        group = str(player.get("position_group") or "—")
-        player = ce_rate_player_vs_eligible_pool(player, pool_by_position.get(group, []))
-    carries = carries_by_player.get(player_id)
-    dribbles = dribbles_by_player.get(player_id)
-
-    render_carries_player_layout(player, carries, dribbles)
 
 
 def render_progression_player_layout(player: dict, passes, carries) -> None:
@@ -2331,54 +2395,46 @@ def render_progression_player_layout(player: dict, passes, carries) -> None:
         )
 
 
+def render_progression_dashboard_content(
+    player_id: str | None,
+    players_by_id: dict[str, dict],
+    pool_by_position: dict[str, list[dict]],
+    passes_by_player: dict,
+    carries_by_player: dict,
+) -> None:
+    player = _resolve_dashboard_player(
+        player_id,
+        players_by_id,
+        pool_by_position,
+        rate_fn=pg_rate_progression_player_vs_eligible_pool,
+    )
+    if player is None:
+        return
+    render_progression_player_layout(
+        player,
+        passes_by_player.get(player_id),
+        carries_by_player.get(player_id),
+    )
+
+
 def render_progression_map_section(
     all_players: list[dict],
     players_by_id: dict[str, dict],
     pool_by_position: dict[str, list[dict]],
     passes_by_player: dict,
     carries_by_player: dict,
+    *,
+    player_id: str | None = None,
 ) -> None:
-    st.caption("Select below or click a player in the Ranking tab.")
-
-    options = _player_options(all_players)
-    if not options:
-        st.info("No players with progression data for the map.")
-        return
-
-    labels = [o[3] for o in options]
-    id_by_label = {o[3]: o[0] for o in options}
-    label_by_id = {o[0]: o[3] for o in options}
-
-    _sync_player_selection(
+    if player_id is None:
+        player_id = st.session_state.get("map_player_id")
+    render_progression_dashboard_content(
+        player_id,
         players_by_id,
-        label_by_id,
-        map_id_key="progression_map_player_id",
-        selectbox_key=PROGRESSION_SELECTBOX_KEY,
+        pool_by_position,
+        passes_by_player,
+        carries_by_player,
     )
-
-    selected_label = st.selectbox(
-        "Player",
-        options=labels,
-        key=PROGRESSION_SELECTBOX_KEY,
-        placeholder="Select a player",
-    )
-
-    if not selected_label:
-        st.info("Select a player from the list or the Ranking tab.")
-        return
-
-    player_id = id_by_label[selected_label]
-    st.session_state["progression_map_player_id"] = player_id
-    player = dict(players_by_id[player_id])
-    if not player.get("eligible_for_rating"):
-        group = str(player.get("position_group") or "—")
-        player = pg_rate_progression_player_vs_eligible_pool(
-            player, pool_by_position.get(group, []),
-        )
-    passes = passes_by_player.get(player_id)
-    carries = carries_by_player.get(player_id)
-
-    render_progression_player_layout(player, passes, carries)
 
 
 def render_rating_section(
@@ -3127,19 +3183,10 @@ def main() -> None:
             all_players, passes_by_player, players_by_id, pool_by_position, rated=rated,
         )
     with tab_dashboard:
-        dash_passes, dash_carries, dash_progression = st.tabs(
-            ["Passes", "Carries", "All Progressions"],
+        player_id = render_dashboard_player_picker(all_players, players_by_id)
+        dash_progression, dash_passes, dash_carries = st.tabs(
+            ["All Progressions", "Passes", "Carries"],
         )
-        with dash_passes:
-            render_map_section(all_players, players_by_id, pool_by_position, passes_by_player)
-        with dash_carries:
-            render_carries_map_section(
-                carries_players,
-                carries_by_id,
-                carries_pool_by_position,
-                carries_by_player,
-                dribbles_by_player,
-            )
         with dash_progression:
             render_progression_map_section(
                 progression_rated,
@@ -3147,6 +3194,24 @@ def main() -> None:
                 progression_pool_by_position,
                 passes_by_player,
                 carries_by_player,
+                player_id=player_id,
+            )
+        with dash_passes:
+            render_map_section(
+                all_players,
+                players_by_id,
+                pool_by_position,
+                passes_by_player,
+                player_id=player_id,
+            )
+        with dash_carries:
+            render_carries_map_section(
+                carries_players,
+                carries_by_id,
+                carries_pool_by_position,
+                carries_by_player,
+                dribbles_by_player,
+                player_id=player_id,
             )
     with tab_ranking:
         render_combined_rating_section(

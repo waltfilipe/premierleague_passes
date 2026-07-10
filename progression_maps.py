@@ -19,16 +19,17 @@ MAP_REF_WIDTH = 10.0
 FIELD_X, FIELD_Y = 120.0, 80.0
 HEATMAP_COLS = 12
 HEATMAP_ROWS = 8
-ARROW_WIDTH = 0.75
-ARROW_HEADWIDTH = 1.15
-ARROW_HEADLENGTH = 1.15
+ARROW_WIDTH = 0.82
+ARROW_HEADWIDTH = 1.25
+ARROW_HEADLENGTH = 1.25
+ALL_ACTIONS_ARROW_SCALE = 1.08
 
 COLOR_PASS = "#60a5fa"
 COLOR_CARRY = "#94a3b8"
-COLOR_PASS_THREAT = "#7dd3fc"
-COLOR_CARRY_THREAT = "#fcd34d"
-COLOR_PASS_THREAT_HIGH = "#fbbf24"
-COLOR_CARRY_THREAT_HIGH = "#f59e0b"
+COLOR_PASS_THREAT = "#22c55e"
+COLOR_CARRY_THREAT = "#ef4444"
+COLOR_PASS_THREAT_HIGH = "#4ade80"
+COLOR_CARRY_THREAT_HIGH = "#f87171"
 CMAP_DEST = LinearSegmentedColormap.from_list(
     "prog_dest", ["#1a1a2e", "#1e3a8a", "#3b82f6", "#fbbf24", "#ef4444"]
 )
@@ -146,8 +147,8 @@ def draw_all_actions_map(
     if (pass_subset is None or pass_subset.empty) and (carry_subset is None or carry_subset.empty):
         ax.text(60, 40, "No actions", ha="center", va="center", color="white", fontsize=9)
     else:
-        _draw_action_arrows(pitch, ax, pass_subset, COLOR_PASS, scale, alpha=0.28)
-        _draw_action_arrows(pitch, ax, carry_subset, COLOR_CARRY, scale, alpha=0.42)
+        _draw_action_arrows(pitch, ax, pass_subset, COLOR_PASS, scale * ALL_ACTIONS_ARROW_SCALE, alpha=0.28)
+        _draw_action_arrows(pitch, ax, carry_subset, COLOR_CARRY, scale * ALL_ACTIONS_ARROW_SCALE, alpha=0.42)
 
     legend_handles = [
         Line2D([0], [0], color=COLOR_PASS, lw=1.4 * scale, label="Pass", alpha=0.55),

@@ -29,8 +29,8 @@ ARROW_HEADLENGTH = 1.15
 ARROW_ALPHA_EMPH = 0.82
 PASS_START_MARKER_SIZE = 7
 
-COLOR_PROGRESSIVE = "#7dd3fc"
-COLOR_HIGHLY_PROGRESSIVE = "#fcd34d"
+COLOR_PROGRESSIVE = "#22c55e"
+COLOR_HIGHLY_PROGRESSIVE = "#4ade80"
 CMAP_PASS_DEST = LinearSegmentedColormap.from_list(
     "pass_dest", ["#1a1a2e", "#1e3a8a", "#3b82f6", "#fbbf24", "#ef4444"]
 )
