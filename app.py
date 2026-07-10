@@ -82,8 +82,8 @@ rank_to_display_score = pe.rank_to_display_score
 score_display_color = pe.score_display_color
 rate_player_vs_eligible_pool = pe.rate_player_vs_eligible_pool
 enrich_player_eligibility = pe.enrich_player_eligibility
-RATING_CONFIDENCE_MINUTES = pe.RATING_CONFIDENCE_MINUTES
-RATING_CONFIDENCE_PASSES = pe.RATING_CONFIDENCE_PASSES
+RATING_CONFIDENCE_MINUTES = getattr(pe, "RATING_CONFIDENCE_MINUTES", 900.0)
+RATING_CONFIDENCE_PASSES = getattr(pe, "RATING_CONFIDENCE_PASSES", 400.0)
 
 
 
