@@ -1098,11 +1098,12 @@ st.markdown(
     .grade-accordion summary::-webkit-details-marker { display: none; }
     .grade-arrow {
         color: #93c5fd;
-        font-size: 0.95rem;
+        font-size: 0.72rem;
         line-height: 1;
         transition: transform 0.18s ease;
         flex-shrink: 0;
         width: 0.85rem;
+        text-align: center;
     }
     .grade-accordion[open] .grade-arrow { transform: rotate(90deg); }
     .grade-summary-main { flex: 1; min-width: 0; }
@@ -1240,7 +1241,7 @@ st.markdown(
         display: grid;
         grid-template-columns: minmax(220px, 0.92fr) minmax(320px, 1.35fr) minmax(210px, 0.78fr);
         gap: 0.75rem;
-        align-items: start;
+        align-items: stretch;
     }
     @media (max-width: 1100px) {
         .pa-layout { grid-template-columns: 1fr; }
@@ -1250,27 +1251,34 @@ st.markdown(
         flex-direction: column;
         gap: 0;
         min-width: 0;
+        height: 100%;
     }
     .pa-col-score {
         display: flex;
         flex-direction: column;
+        height: 100%;
     }
     .pa-score-stack {
         display: flex;
         flex-direction: column;
         gap: 0.55rem;
-        height: var(--pa-card-h);
+        height: 100%;
+        flex: 1;
+        min-height: 0;
         box-sizing: border-box;
     }
     .pa-col-pillars {
         min-width: 0;
+        height: 100%;
     }
     .pa-pillars-card {
         display: flex;
         flex-direction: column;
         padding: 0.75rem 0.7rem 0.7rem;
         margin-bottom: 0;
-        height: var(--pa-card-h);
+        height: 100%;
+        flex: 1;
+        min-height: 0;
         box-sizing: border-box;
     }
     .pa-identity-card {
@@ -1278,10 +1286,11 @@ st.markdown(
         margin-bottom: 0;
         display: flex;
         flex-direction: column;
-        gap: 0.6rem;
-        height: var(--pa-card-h);
+        gap: 0.55rem;
+        height: 100%;
+        flex: 1;
+        min-height: 0;
         box-sizing: border-box;
-        justify-content: flex-start;
     }
     .pa-identity-top {
         display: flex;
@@ -1336,13 +1345,16 @@ st.markdown(
         display: flex;
         flex-direction: column;
         gap: 0;
+        flex: 1;
+        min-height: 0;
+        justify-content: space-between;
     }
     .pa-part-row {
         display: flex;
         justify-content: space-between;
         align-items: baseline;
         gap: 0.75rem;
-        padding: 0.4rem 0;
+        padding: 0.28rem 0;
         border-bottom: 1px solid #243049;
     }
     .pa-part-row:last-child { border-bottom: none; padding-bottom: 0; }
@@ -1433,7 +1445,6 @@ st.markdown(
     .pa-col-score .radar-card .radar-card-body {
         flex: 1;
         min-height: 0;
-        height: var(--pa-radar-h);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1443,12 +1454,13 @@ st.markdown(
         width: 100%;
         height: 100%;
         max-width: 100%;
+        max-height: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
     }
     .pa-col-score .radar-card .rating-radar {
-        width: auto;
+        width: 100%;
         height: 100%;
         max-width: 100%;
         max-height: 100%;
@@ -1728,18 +1740,15 @@ def _pa_rating_box_colors(player: dict, *, rating_key: str) -> tuple[str, str]:
     return bg, _badge_text_color(bg)
 
 
-def _player_analysis_layout_metrics(
-    n_sections: int,
-    *,
-    n_groups: int = 2,
-) -> tuple[int, int]:
-    """Height (px) for the three main cards and the radar plot area."""
-    card_h = 28 + n_groups * 24 + n_sections * 41
-    rating_block_px = 92
-    stack_gap_px = 9
-    radar_card_pad_px = 16
-    radar_h = max(170, card_h - rating_block_px - stack_gap_px - radar_card_pad_px)
-    return card_h, radar_h
+def _section_rating_pill_html(score: float | None) -> str:
+    if score is None:
+        return '<span class="section-rating-pill" style="background:#334155;color:#f8fafc">—</span>'
+    bg = rating_value_color(float(score))
+    txt = _badge_text_color(bg)
+    return (
+        f'<span class="section-rating-pill" style="background:{bg};color:{txt}">'
+        f"{html.escape(fmt_rating_score(score))}</span>"
+    )
 
 
 def _player_options(rated: list[dict]) -> list[tuple[str, str, str, str]]:
@@ -2402,25 +2411,16 @@ def _section_grade_summary_bits(
     section_ratings = player.get("section_ratings") if isinstance(player.get("section_ratings"), dict) else {}
     section_rank_info = player.get("section_rating_ranks") if isinstance(player.get("section_rating_ranks"), dict) else {}
     score = section_ratings.get(section_key)
-    score_html = '<span class="section-rating-pill" style="background:#334155;color:#f8fafc">—</span>'
+    score_html = _section_rating_pill_html(score)
     rank_html = ""
     if score is not None:
-        txt = fmt_rating_score(score)
         rank_info = section_rank_info.get(section_key)
         if rank_info:
-            color = rank_color(int(rank_info["rank"]), int(rank_info["total"]))
-            txt_color = _badge_text_color(color)
-            score_html = (
-                f'<span class="section-rating-pill" style="background:{color};color:{txt_color}">'
-                f"{html.escape(txt)}</span>"
-            )
             rank_html = (
                 f'<div class="grade-card-rank">'
                 f'{html.escape(rank_in_group_fn(int(rank_info["rank"]), player.get("position_group")))}'
                 f"</div>"
             )
-        else:
-            score_html = f'<span class="section-rating-pill">{html.escape(txt)}</span>'
     return (
         f'<div class="grade-summary-main">'
         f'<div class="grade-summary-top">'
@@ -2460,7 +2460,7 @@ def _section_grade_accordion_html(
     return (
         f'<details class="grade-accordion"{open_attr}>'
         "<summary>"
-        '<span class="grade-arrow">›</span>'
+        '<i class="fa-solid fa-chevron-right grade-arrow" aria-hidden="true"></i>'
         f"{summary_main}"
         "</summary>"
         f'<div class="grade-accordion-body">{lines}</div>'
@@ -2683,9 +2683,6 @@ def _build_player_analysis_layout_html(
     rating_slot_fn=None,
 ) -> str:
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
-    n_sections = len(scout_section_specs)
-    card_h, radar_h = _player_analysis_layout_metrics(n_sections)
-    layout_style = f"--pa-card-h: {card_h}px; --pa-radar-h: {radar_h}px;"
     rating_panel = _player_analysis_rating_panel_html(player, metric_ranks)
     radar_card = _pillar_radar_card_html(
         player,
@@ -2693,7 +2690,7 @@ def _build_player_analysis_layout_html(
         pillar_labels=pillar_labels or _PROGRESSION_PILLAR_RADAR_LABELS,
         confidence_minutes=confidence_minutes,
         confidence_passes=confidence_passes,
-        radar_figsize=(3.6, 3.6),
+        radar_figsize=(4.0, 4.0),
         line_color=PA_RADAR_LINE_COLOR,
         fill_color=PA_RADAR_FILL_COLOR,
     )
@@ -2716,7 +2713,7 @@ def _build_player_analysis_layout_html(
         fmt_stat_fn=fmt_stat_fn,
     )
     return (
-        f'<div class="pa-layout" style="{layout_style}">'
+        '<div class="pa-layout">'
         f'<div class="pa-col pa-col-identity">{identity_card}</div>'
         '<div class="pa-col pa-col-score">'
         '<div class="pa-score-stack">'
