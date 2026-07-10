@@ -82,6 +82,7 @@ SIMILARITY_TOP_K = 10
 PLAYER_ANALYSIS_SELECT_KEY = "player_analysis_select"
 PLAYER_ANALYSIS_SHOW_MAPS_KEY = "pa_show_maps"
 PLAYER_ANALYSIS_SHOW_SIMILAR_KEY = "pa_show_similar"
+PLAYER_ANALYSIS_SIMILAR_PICK_KEY = "pa_similar_pick"
 FIXED_CLASSIFICATION_MODEL = CLASSIFICATION_MODEL_DEFAULT
 FIXED_TIER_MODEL = TIER_MODEL_DEFAULT
 FIXED_XT_SURFACE_MODE = XT_SURFACE_MODE_DEFAULT
@@ -802,7 +803,7 @@ st.markdown(
     }
     .pres-flow {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(3, 1fr);
         gap: 0.65rem;
     }
     @media (max-width: 900px) {
@@ -1212,43 +1213,42 @@ st.markdown(
         white-space: nowrap;
     }
     section[data-testid="stSidebar"] { display: none; }
-    .pa-shell { max-width: 1080px; margin: 0 auto 1.25rem auto; }
-    .pa-hero-card {
+    .pa-shell { max-width: 1180px; margin: 0 auto 1.25rem auto; }
+    .pa-header {
         background: linear-gradient(145deg, #172035 0%, #101522 58%, #0f172a 100%);
         border: 1px solid #334155;
         border-radius: 14px;
-        padding: 1.1rem 1.25rem 1rem;
-        margin: 0.35rem 0 0.85rem 0;
+        padding: 1rem 1.2rem;
+        margin: 0.35rem 0 0.75rem 0;
         box-shadow: 0 10px 28px rgba(2, 6, 23, 0.28);
     }
-    .pa-hero-top {
+    .pa-header-top {
         display: flex;
         align-items: flex-start;
         justify-content: space-between;
         gap: 1rem;
         flex-wrap: wrap;
-        margin-bottom: 0.85rem;
     }
-    .pa-hero-title {
+    .pa-header-title {
         margin: 0;
         color: #f8fafc;
-        font-size: 1.45rem;
+        font-size: 1.5rem;
         font-weight: 800;
         letter-spacing: -0.02em;
         line-height: 1.15;
     }
-    .pa-hero-meta {
-        margin: 0.3rem 0 0 0;
+    .pa-header-meta {
+        margin: 0.28rem 0 0 0;
         color: #94a3b8;
         font-size: 0.88rem;
     }
-    .pa-hero-badges {
+    .pa-header-badges {
         display: inline-flex;
         flex-wrap: wrap;
         gap: 0.35rem;
-        margin-top: 0.45rem;
+        margin-top: 0.4rem;
     }
-    .pa-hero-chip {
+    .pa-header-chip {
         display: inline-flex;
         align-items: center;
         padding: 0.22rem 0.55rem;
@@ -1258,41 +1258,114 @@ st.markdown(
         color: #cbd5e1;
         font-size: 0.74rem;
         font-weight: 600;
-        letter-spacing: 0.02em;
     }
-    .pa-hero-metrics {
+    .pa-toggles { margin: 0.15rem 0 0.75rem 0; }
+    .pa-layout {
         display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 0.55rem;
+        grid-template-columns: minmax(0, 1fr) 300px;
+        gap: 0.8rem;
+        align-items: start;
     }
-    @media (max-width: 900px) {
-        .pa-hero-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 980px) {
+        .pa-layout { grid-template-columns: 1fr; }
     }
-    .pa-metric-tile {
-        background: rgba(15, 23, 42, 0.55);
-        border: 1px solid #243049;
-        border-radius: 10px;
-        padding: 0.55rem 0.65rem;
-        min-height: 3.35rem;
+    .pa-layout-body {
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+        min-width: 0;
     }
-    .pa-metric-label {
+    .pa-layout-side {
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+        position: sticky;
+        top: 0.75rem;
+    }
+    .pa-rating-panel {
+        padding: 0.95rem 1rem 0.9rem;
+        text-align: center;
+    }
+    .pa-rating-panel-label {
         color: #8fa3bf;
         font-size: 0.68rem;
         font-weight: 700;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 0.2rem;
+        margin-bottom: 0.45rem;
     }
-    .pa-metric-value {
-        color: #f8fafc;
-        font-size: 1.12rem;
+    .pa-rating-panel .rating-box-wrap {
+        justify-content: center;
+        width: 100%;
+    }
+    .pa-rating-panel .rating-box {
+        min-width: 4.5rem;
+        font-size: 1.65rem !important;
+        padding: 0.45rem 0.85rem !important;
+    }
+    .pa-rating-panel .sub-rating-row {
+        justify-content: center;
+        margin-top: 0.55rem;
+        gap: 0.45rem;
+    }
+    .pa-rating-panel .rating-meta {
+        justify-content: center;
+        margin-top: 0.45rem;
+    }
+    .pa-participation-card { padding: 0.85rem 1rem; margin-bottom: 0; }
+    .pa-participation-card h4 {
+        margin: 0 0 0.55rem 0;
+        color: #8fa3bf;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+    .pa-participation-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.45rem 0.75rem;
+    }
+    .pa-participation-grid .metric-line {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.18rem;
+        background: rgba(15, 23, 42, 0.45);
+        border: 1px solid #243049;
+        border-radius: 8px;
+        padding: 0.48rem 0.58rem;
+        margin: 0;
+    }
+    .pa-participation-grid .metric-line > span:last-child {
+        text-align: left !important;
+        width: 100%;
+    }
+    .pa-participation-grid .stat-val {
+        font-size: 1rem;
         font-weight: 800;
-        line-height: 1.1;
+        color: #f8fafc;
     }
-    .pa-metric-sub {
-        color: #64748b;
-        font-size: 0.72rem;
-        margin-top: 0.12rem;
+    @media (max-width: 720px) {
+        .pa-participation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .pa-pillars-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.55rem;
+    }
+    @media (max-width: 720px) {
+        .pa-pillars-grid { grid-template-columns: 1fr; }
+    }
+    .pa-pillars-grid .grade-accordion { margin-bottom: 0; }
+    .pa-layout-side .radar-card {
+        margin-bottom: 0;
+        padding: 0.85rem 0.95rem 0.95rem;
+    }
+    .pa-layout-side .radar-card-body { min-height: 210px; }
+    .pa-layout-side .rating-radar-wrap {
+        max-width: 100%;
+        height: 230px;
     }
     .pa-panel {
         background: linear-gradient(160deg, #151b2b 0%, #101522 100%);
@@ -1309,9 +1382,20 @@ st.markdown(
         text-transform: uppercase;
         padding: 0.75rem 0.75rem 0.35rem;
     }
-    .pa-profile-wrap .dashboard-sidebar-stack { margin-bottom: 0; }
-    .pa-profile-wrap .player-card { margin-bottom: 0.55rem; }
     .pa-similar-wrap { margin-top: 0.85rem; }
+    .pa-similar-card {
+        background: linear-gradient(160deg, #151b2b 0%, #101522 100%);
+        border: 1px solid #2a3550;
+        border-radius: 12px;
+        padding: 0.85rem 0.95rem 0.95rem;
+        margin-top: 0.45rem;
+    }
+    .pa-similar-caption {
+        color: #94a3b8;
+        font-size: 0.82rem;
+        line-height: 1.45;
+        margin: 0 0 0.65rem 0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -2242,6 +2326,117 @@ def render_dashboard_sidebar(player: dict, **kwargs) -> None:
     st.html(_build_dashboard_sidebar_html(player, **kwargs), width="stretch")
 
 
+def _build_player_analysis_participation_html(
+    player: dict,
+    participation_keys: tuple[str, ...],
+    *,
+    label_fn,
+    tooltip_fn,
+    rank_in_group_fn,
+    fmt_pct_fn,
+    fmt_stat_fn,
+) -> str:
+    metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
+    lines = []
+    for key in participation_keys:
+        lines.append(
+            _metric_line_html(
+                label_fn(key),
+                key,
+                _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
+                metric_ranks,
+                player=player,
+                show_rank=True,
+                label_fn=label_fn,
+                tooltip_fn=tooltip_fn,
+                rank_in_group_fn=rank_in_group_fn,
+            )
+        )
+    return (
+        '<div class="player-card pa-participation-card">'
+        "<h4>Participation</h4>"
+        f'<div class="pa-participation-grid">{"".join(lines)}</div>'
+        "</div>"
+    )
+
+
+def _build_player_analysis_layout_html(
+    player: dict,
+    *,
+    scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
+    pillar_labels: dict[str, str] | None = None,
+    participation_keys: tuple[str, ...] = PROGRESSION_PARTICIPATION_KEYS,
+    label_fn=pg_analyst_metric_label,
+    tooltip_fn=pg_metric_tooltip,
+    rank_in_group_fn=pg_rank_in_group_label,
+    fmt_pct_fn=pg_fmt_pct,
+    fmt_stat_fn=pg_fmt_stat_value,
+    confidence_minutes: float = RATING_CONFIDENCE_MINUTES,
+    confidence_passes: float = RATING_CONFIDENCE_PASSES,
+    rating_key: str = "progression_rating",
+    rating_slot_fn=_progression_rating_slot_html,
+) -> str:
+    metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
+    rating_slot = (
+        rating_slot_fn(player, metric_ranks)
+        if rating_slot_fn is not None
+        else _player_rating_slot_html(player, metric_ranks, rating_key=rating_key)
+    )
+    rating_panel = (
+        '<div class="player-card pa-rating-panel">'
+        '<div class="pa-rating-panel-label">Overall rating</div>'
+        f"{rating_slot}"
+        "</div>"
+    )
+    radar_card = _pillar_radar_card_html(
+        player,
+        scout_section_specs=scout_section_specs,
+        pillar_labels=pillar_labels or _PROGRESSION_PILLAR_RADAR_LABELS,
+        confidence_minutes=confidence_minutes,
+        confidence_passes=confidence_passes,
+    )
+    participation_card = _build_player_analysis_participation_html(
+        player,
+        participation_keys,
+        label_fn=label_fn,
+        tooltip_fn=tooltip_fn,
+        rank_in_group_fn=rank_in_group_fn,
+        fmt_pct_fn=fmt_pct_fn,
+        fmt_stat_fn=fmt_stat_fn,
+    )
+    pillar_html = "".join(
+        _section_grade_accordion_html(
+            player,
+            section_key,
+            title,
+            keys,
+            open=False,
+            label_fn=label_fn,
+            tooltip_fn=tooltip_fn,
+            rank_in_group_fn=rank_in_group_fn,
+            fmt_pct_fn=fmt_pct_fn,
+            fmt_stat_fn=fmt_stat_fn,
+        )
+        for section_key, title, _subtitle, keys in scout_section_specs
+    )
+    return (
+        '<div class="pa-layout">'
+        '<div class="pa-layout-body">'
+        f"{participation_card}"
+        f'<div class="pa-pillars-grid">{pillar_html}</div>'
+        "</div>"
+        '<div class="pa-layout-side">'
+        f"{rating_panel}"
+        f"{radar_card}"
+        "</div>"
+        "</div>"
+    )
+
+
+def render_player_analysis_profile(player: dict, **kwargs) -> None:
+    st.html(_build_player_analysis_layout_html(player, **kwargs), width="stretch")
+
+
 def _section_grade_body_html(
     player: dict,
     keys: tuple[str, ...],
@@ -2352,7 +2547,7 @@ def render_dashboard_player_picker(
 
     options = _player_options(all_players)
     if not options:
-        st.info("No players available for the dashboard.")
+        st.info("No players available.")
         return None
 
     labels = [o[3] for o in options]
@@ -2685,46 +2880,25 @@ def render_progression_maps_only(player: dict, passes, carries) -> None:
         st.pyplot(fig_heat_threat, clear_figure=True, use_container_width=True)
 
 
-def _player_analysis_hero_html(player: dict) -> str:
+def _player_analysis_header_html(player: dict) -> str:
     search_pos = sim.player_search_position(player)
     group_label = sim.similarity_position_label(search_pos) if search_pos else "—"
     badges = _rating_badges_html(player)
     badges_block = (
-        f'<div class="pa-hero-badges">{badges}</div>' if badges else ""
-    )
-    overall = fmt_rating_score(player.get("progression_rating"))
-    pass_score = fmt_rating_score(player.get("pass_rating"))
-    carry_score = fmt_rating_score(player.get("carry_rating"))
-    metric_tiles = [
-        ("Overall", overall, "Combined progression"),
-        ("Pass", pass_score, "Pass rating"),
-        ("Carry", carry_score, "Carry rating"),
-        ("Minutes", fmt_stat_value("minutes", player.get("minutes")), "Season total"),
-        ("Actions", fmt_stat_value("passes_completed", player.get("passes_completed")), "Completed passes"),
-    ]
-    tiles_html = "".join(
-        (
-            '<div class="pa-metric-tile">'
-            f'<div class="pa-metric-label">{html.escape(label)}</div>'
-            f'<div class="pa-metric-value">{html.escape(value)}</div>'
-            f'<div class="pa-metric-sub">{html.escape(sub)}</div>'
-            "</div>"
-        )
-        for label, value, sub in metric_tiles
+        f'<div class="pa-header-badges">{badges}</div>' if badges else ""
     )
     return (
-        '<div class="pa-hero-card">'
-        '<div class="pa-hero-top">'
+        '<div class="pa-header">'
+        '<div class="pa-header-top">'
         "<div>"
-        f'<h2 class="pa-hero-title">{html.escape(str(player.get("player_name", "—")))}</h2>'
-        f'<p class="pa-hero-meta">{html.escape(str(player.get("team", "—")))} · '
+        f'<h2 class="pa-header-title">{html.escape(str(player.get("player_name", "—")))}</h2>'
+        f'<p class="pa-header-meta">{html.escape(str(player.get("team", "—")))} · '
         f'{html.escape(str(player.get("position", "—")))} · '
         f'{html.escape(group_label)}</p>'
         f"{badges_block}"
         "</div>"
-        f'<span class="pa-hero-chip">Premier League</span>'
+        '<span class="pa-header-chip">Premier League</span>'
         "</div>"
-        f'<div class="pa-hero-metrics">{tiles_html}</div>'
         "</div>"
     )
 
@@ -2783,6 +2957,7 @@ def _render_player_analysis_similarity(
     carries_by_player: dict,
     carries_players_sb: list[dict],
     all_players: list[dict],
+    pick_key: str = "pa_similar_pick",
 ) -> None:
     with st.spinner("Loading Serie A reference pool…"):
         context = _prepare_sb_to_sa_similarity_context(all_players, carries_players_sb)
@@ -2811,10 +2986,12 @@ def _render_player_analysis_similarity(
         )
         return
 
-    st.caption(
-        f"Top {SIMILARITY_TOP_K} Serie A players in **{html.escape(pool_label)}** "
-        f"({len(pool)} eligible). Ranked by pass+carry metric z-scores; "
-        "Origin blends pass and carry start locations."
+    st.markdown(
+        f'<p class="pa-similar-caption">Top {SIMILARITY_TOP_K} Serie A players in '
+        f"<strong>{html.escape(pool_label)}</strong> ({len(pool)} eligible). "
+        "Ranked by pass+carry metrics; Origin reflects shared start locations. "
+        "Click a row to compare.</p>",
+        unsafe_allow_html=True,
     )
     results = sim.find_similar_option_c(target_player, pool, top_k=SIMILARITY_TOP_K)
     results = sim.attach_pass_origin_similarity(
@@ -2835,9 +3012,10 @@ def _render_player_analysis_similarity(
         similar_league="Serie A",
         target_pool_by_pos=sb_by_pos,
         similar_pool_by_pos=sa_by_pos,
-        pick_key="pa_similar_pick",
+        pick_key=pick_key,
         include_origin=False,
         origin_column=True,
+        html_table=True,
     )
     with st.expander("Metrics used in similarity"):
         st.write(", ".join(sim.similarity_metric_label(k) for k in sim.SIMILARITY_METRICS_A))
@@ -2889,6 +3067,9 @@ def render_player_analysis_section(
 
     player_id = id_by_label[selected_label]
     st.session_state["map_player_id"] = player_id
+    if st.session_state.get("pa_last_player_id") != player_id:
+        st.session_state["pa_last_player_id"] = player_id
+        st.session_state.pop(PLAYER_ANALYSIS_SIMILAR_PICK_KEY, None)
 
     player = _resolve_progression_analysis_player(
         player_id,
@@ -2904,16 +3085,17 @@ def render_player_analysis_section(
         return
 
     st.markdown('<div class="pa-shell">', unsafe_allow_html=True)
-    st.markdown(_player_analysis_hero_html(player), unsafe_allow_html=True)
+    st.markdown(_player_analysis_header_html(player), unsafe_allow_html=True)
 
+    st.markdown('<div class="pa-toggles">', unsafe_allow_html=True)
     toggle_maps, toggle_similar, _ = st.columns([1.1, 1.35, 2.55], gap="small")
     with toggle_maps:
         show_maps = st.toggle("Show progression maps", key=PLAYER_ANALYSIS_SHOW_MAPS_KEY)
     with toggle_similar:
         show_similar = st.toggle("Show Serie A comparables", key=PLAYER_ANALYSIS_SHOW_SIMILAR_KEY)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown('<div class="pa-profile-wrap">', unsafe_allow_html=True)
-    render_dashboard_sidebar(
+    render_player_analysis_profile(
         player,
         scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
         pillar_labels=_PROGRESSION_PILLAR_RADAR_LABELS,
@@ -2928,7 +3110,6 @@ def render_player_analysis_section(
         rating_key="progression_rating",
         rating_slot_fn=_progression_rating_slot_html,
     )
-    st.markdown("</div>", unsafe_allow_html=True)
 
     if show_maps:
         st.markdown(
@@ -2952,6 +3133,7 @@ def render_player_analysis_section(
             carries_by_player=carries_by_player,
             carries_players_sb=carries_players,
             all_players=all_players,
+            pick_key="pa_similar_pick",
         )
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -3179,14 +3361,9 @@ def _render_presentation_blur_demo(player: dict, passes) -> None:
 
 PRES_FEATURE_SPECS: tuple[tuple[str, str, str], ...] = (
     (
-        "dashboard",
-        "Dashboard",
-        "2×2 map grid on the left and rating, participation, and pillar cards on the right.",
-    ),
-    (
         "ranking",
         "Ranking",
-        "Tables by position group — click a player to open the Dashboard.",
+        "Tables by position group — click a player to open Player Analysis.",
     ),
     (
         "player_analysis",
@@ -3202,7 +3379,7 @@ def _toggle_pres_demo(section: str) -> None:
 
 
 def _render_pres_feature_cards() -> None:
-    cols = st.columns(3)
+    cols = st.columns(len(PRES_FEATURE_SPECS))
     for col, (key, title, desc) in zip(cols, PRES_FEATURE_SPECS):
         with col:
             is_open = st.session_state.get(PRES_DEMO_KEY) == key
@@ -3264,7 +3441,7 @@ def _render_presentation_ranking_demo(groups: list[tuple[str, list[dict]]]) -> N
         '<div class="pres-blur-caption">'
         "<strong>Ranking by group</strong>"
         "<p>Tables by position with rating (1st = 9.0 · median = 6.0). "
-        "Click a player to open the full Dashboard analysis.</p>"
+        "Click a player to open Player Analysis.</p>"
         "</div></div></div>"
     )
     st.html(demo_html, width="stretch")
@@ -3273,8 +3450,7 @@ def _render_presentation_ranking_demo(groups: list[tuple[str, list[dict]]]) -> N
 def _render_pres_flow_steps() -> None:
     steps = [
         ("Overview", "Understand the layout and browse previews."),
-        ("Dashboard", "Analyze maps and player cards for any player."),
-        ("Ranking", "Explore rankings by group and open players in the Dashboard."),
+        ("Ranking", "Explore rankings by group and open players in Player Analysis."),
         ("Player Analysis", "Deep-dive on a player with optional maps and Serie A comparables."),
     ]
     items = []
@@ -3314,19 +3490,7 @@ def render_presentation_tab(
     active_demo = st.session_state.get(PRES_DEMO_KEY)
     if active_demo:
         st.markdown('<div class="pres-demo-wrap">', unsafe_allow_html=True)
-        if active_demo == "dashboard":
-            example = _presentation_example_player(all_players, passes_by_player)
-            if example:
-                ex_id = str(example["player_id"])
-                ex_passes = passes_by_player[ex_id]
-                player = dict(players_by_id.get(ex_id, example))
-                if not player.get("eligible_for_rating"):
-                    group = str(player.get("position_group") or "—")
-                    player = rate_player_vs_eligible_pool(player, pool_by_position.get(group, []))
-                _render_presentation_blur_demo(player, ex_passes)
-            else:
-                st.info("No sample player available for the Dashboard preview.")
-        elif active_demo == "ranking":
+        if active_demo == "ranking":
             _render_presentation_ranking_demo(_rating_groups_from_rated(rated))
         elif active_demo == "player_analysis":
             _render_presentation_player_analysis_demo()
@@ -3392,6 +3556,133 @@ def _render_similarity_player_panel(
         st.caption("No passes or carries for origin heatmap.")
 
 
+def _sync_similar_row_selection(pick_key: str) -> None:
+    qp = st.query_params.get("similar_idx")
+    if qp is not None and str(qp).isdigit():
+        st.session_state[pick_key] = int(qp)
+
+
+def _similarity_meter_html(pct: float | None, *, tone: str = "metrics") -> str:
+    if pct is None:
+        return '<span class="sim-empty">—</span>'
+    value = max(0.0, min(100.0, float(pct)))
+    tone_cls = " origin" if tone == "origin" else ""
+    return (
+        f'<span class="sim-meter-wrap{tone_cls}">'
+        f'<span class="sim-meter"><span class="sim-meter-fill" style="width:{value:.0f}%"></span></span>'
+        f'<span class="sim-pct">{value:.0f}%</span>'
+        "</span>"
+    )
+
+
+_SIMILARITY_TABLE_EMBED_CSS = """
+.pa-sim-table{width:100%;border-collapse:separate;border-spacing:0;font-size:0.86rem;
+  border:1px solid #2a3550;border-radius:12px;overflow:hidden;background:#111827}
+.pa-sim-table th,.pa-sim-table td{padding:10px 12px;text-align:left;vertical-align:middle}
+.pa-sim-table th{background:linear-gradient(180deg,#1b2438,#141b2d);color:#8fa3bf;font-weight:600;
+  font-size:0.68rem;letter-spacing:0.06em;text-transform:uppercase;border-bottom:1px solid #2f3b56}
+.pa-sim-table td{border-bottom:1px solid #232d42;color:#e2e8f0}
+.pa-sim-table tr.row{cursor:pointer;transition:background .15s ease}
+.pa-sim-table tr.row:hover td{background:#1a2238}
+.pa-sim-table tr.row.sel td{background:#1c3354}
+.pa-sim-table tr.row.sel td:first-child{box-shadow:inset 3px 0 0 #60a5fa}
+.pa-sim-table tr:last-child td{border-bottom:none}
+.pa-sim-table .rank{color:#64748b;font-weight:700;width:2.2rem}
+.pa-sim-table .team{color:#94a3b8;font-size:0.82rem}
+.pa-sim-table .sim-col,.pa-sim-table .origin-col{min-width:7.5rem}
+.sim-meter-wrap{display:inline-flex;align-items:center;gap:0.45rem;min-width:6.5rem}
+.sim-meter{position:relative;width:4.5rem;height:0.42rem;border-radius:999px;background:#1e293b;overflow:hidden}
+.sim-meter-fill{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#2563eb,#38bdf8)}
+.sim-meter-wrap.origin .sim-meter-fill{background:linear-gradient(90deg,#0f766e,#34d399)}
+.sim-pct{font-size:0.8rem;font-weight:700;color:#f8fafc;min-width:2.2rem}
+.sim-empty{color:#64748b}
+"""
+
+
+def _similarity_results_table_html(
+    results: list[dict],
+    *,
+    selected_idx: int | None,
+    origin_column: bool = True,
+) -> str:
+    body = []
+    for idx, row in enumerate(results):
+        sel = " sel" if selected_idx is not None and idx == selected_idx else ""
+        origin_val = row.get("origin_similarity_pct")
+        origin_cell = (
+            f'<td class="origin-col">{_similarity_meter_html(origin_val, tone="origin")}</td>'
+            if origin_column
+            else ""
+        )
+        body.append(
+            f'<tr class="row{sel}" onclick="pickSimilar({idx})">'
+            f'<td class="rank">{idx + 1}</td>'
+            f"<td>{html.escape(str(row.get('player_name', '—')))}</td>"
+            f'<td class="team">{html.escape(str(row.get("team", "—")))}</td>'
+            f'<td class="sim-col">{_similarity_meter_html(row.get("similarity_pct"))}</td>'
+            f"{origin_cell}"
+            "</tr>"
+        )
+    origin_head = '<th>Origin</th>' if origin_column else ""
+    return (
+        '<table class="pa-sim-table"><thead><tr>'
+        "<th>#</th><th>Player</th><th>Team</th><th>Similarity</th>"
+        f"{origin_head}"
+        "</tr></thead><tbody>"
+        f"{''.join(body)}</tbody></table>"
+    )
+
+
+def _render_similarity_results_html_table(
+    results: list[dict],
+    *,
+    pick_key: str,
+    origin_column: bool = True,
+) -> int | None:
+    _sync_similar_row_selection(pick_key)
+    selected_idx = st.session_state.get(pick_key)
+    if selected_idx is not None:
+        try:
+            selected_idx = int(selected_idx)
+        except (TypeError, ValueError):
+            selected_idx = None
+    if selected_idx is not None and (selected_idx < 0 or selected_idx >= len(results)):
+        selected_idx = None
+
+    table_html = _similarity_results_table_html(
+        results,
+        selected_idx=selected_idx,
+        origin_column=origin_column,
+    )
+    row_height = 44
+    height = 56 + row_height * max(len(results), 1)
+    page = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+*{{box-sizing:border-box}}
+body{{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  color:#e8edf5;background:transparent}}
+{_SIMILARITY_TABLE_EMBED_CSS}
+</style>
+<script>
+function pickSimilar(idx) {{
+  try {{
+    const base = window.parent !== window ? window.parent : window;
+    const url = new URL(base.location.href);
+    url.searchParams.set("similar_idx", String(idx));
+    base.location.href = url.toString();
+  }} catch (e) {{
+    const url = new URL(window.location.href);
+    url.searchParams.set("similar_idx", String(idx));
+    window.location.href = url.toString();
+  }}
+}}
+</script></head><body>
+<div class="pa-similar-card">{table_html}</div>
+</body></html>"""
+    components.html(page, height=height, scrolling=False)
+    return selected_idx
+
+
 def _similarity_results_df(
     results: list[dict],
     *,
@@ -3444,6 +3735,7 @@ def _render_similarity_results_tab(
     include_origin: bool = False,
     origin_dual: bool = False,
     origin_column: bool = False,
+    html_table: bool = False,
 ) -> None:
     import pandas as pd
 
@@ -3451,37 +3743,48 @@ def _render_similarity_results_tab(
         st.info("No similar players found.")
         return
 
-    df = _similarity_results_df(
-        results,
-        include_origin=include_origin,
-        origin_dual=origin_dual,
-        origin_column=origin_column,
-    )
-    display_df = df.drop(columns=["_player_id"])
-    pick = st.dataframe(
-        display_df,
-        use_container_width=True,
-        hide_index=True,
-        on_select="rerun",
-        selection_mode="single-row",
-        key=pick_key,
-    )
-
     selected_rows: list[int] = []
-    if pick is not None:
-        selection = getattr(pick, "selection", None)
-        if selection is not None:
-            selected_rows = list(getattr(selection, "rows", []) or [])
-        elif isinstance(pick, dict):
-            selected_rows = list(pick.get("selection", {}).get("rows", []) or [])
-    if not selected_rows and pick_key in st.session_state:
-        state = st.session_state.get(pick_key)
-        if isinstance(state, dict):
-            selected_rows = list(state.get("selection", {}).get("rows", []) or [])
+    if html_table:
+        selected_idx = _render_similarity_results_html_table(
+            results,
+            pick_key=pick_key,
+            origin_column=origin_column,
+        )
+        if selected_idx is None:
+            st.caption("Click a row to compare with the selected player.")
+            return
+        selected_rows = [selected_idx]
+    else:
+        df = _similarity_results_df(
+            results,
+            include_origin=include_origin,
+            origin_dual=origin_dual,
+            origin_column=origin_column,
+        )
+        display_df = df.drop(columns=["_player_id"])
+        pick = st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key=pick_key,
+        )
 
-    if not selected_rows:
-        st.caption("Click a table row to compare with the selected player.")
-        return
+        if pick is not None:
+            selection = getattr(pick, "selection", None)
+            if selection is not None:
+                selected_rows = list(getattr(selection, "rows", []) or [])
+            elif isinstance(pick, dict):
+                selected_rows = list(pick.get("selection", {}).get("rows", []) or [])
+        if not selected_rows and pick_key in st.session_state:
+            state = st.session_state.get(pick_key)
+            if isinstance(state, dict):
+                selected_rows = list(state.get("selection", {}).get("rows", []) or [])
+
+        if not selected_rows:
+            st.caption("Click a table row to compare with the selected player.")
+            return
 
     similar = dict(results[int(selected_rows[0])])
     similar_id = str(similar.get("player_id", ""))
@@ -3553,7 +3856,7 @@ def _render_similarity_results_tab(
 
 def main() -> None:
     with st.spinner("Loading data…"):
-        all_players, carries_players, passes_by_player, carries_by_player, dribbles_by_player = load_core_data()
+        all_players, carries_players, passes_by_player, carries_by_player, _ = load_core_data()
         (
             rated,
             players_by_id,
@@ -3568,50 +3871,13 @@ def main() -> None:
 
     selected_player_id = st.session_state.get("map_player_id")
 
-    tab_pres, tab_dashboard, tab_ranking, tab_analysis = st.tabs(
-        ["Overview", "Dashboard", "Ranking", "Player Analysis"]
+    tab_pres, tab_ranking, tab_analysis = st.tabs(
+        ["Overview", "Ranking", "Player Analysis"]
     )
     with tab_pres:
         render_presentation_tab(
             all_players, passes_by_player, players_by_id, pool_by_position, rated=rated,
         )
-    with tab_dashboard:
-        player_id = render_dashboard_player_picker(all_players, players_by_id)
-        dash_view = st.segmented_control(
-            "Dashboard view",
-            options=["All Progressions", "Passes", "Carries"],
-            default="All Progressions",
-            key="dashboard_view",
-        )
-        if dash_view == "All Progressions":
-            render_progression_map_section(
-                progression_by_id,
-                players_by_id,
-                carries_by_id,
-                progression_pool_by_position,
-                pool_by_position,
-                carries_pool_by_position,
-                passes_by_player,
-                carries_by_player,
-                player_id=player_id,
-            )
-        elif dash_view == "Passes":
-            render_map_section(
-                all_players,
-                players_by_id,
-                pool_by_position,
-                passes_by_player,
-                player_id=player_id,
-            )
-        else:
-            render_carries_map_section(
-                carry_rated,
-                carries_by_id,
-                carries_pool_by_position,
-                carries_by_player,
-                dribbles_by_player,
-                player_id=player_id,
-            )
     with tab_ranking:
         render_combined_rating_section(
             progression_rated,
