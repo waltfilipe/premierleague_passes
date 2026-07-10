@@ -1769,7 +1769,8 @@ def _render_presentation_similarity_demo() -> None:
         '<div class="pres-blur-caption">'
         "<strong>Similarity B ↔ A</strong>"
         "<p>Select a player from one league and see the <strong>10 most similar</strong> "
-        "in the other league at the same position (LB↔LB, LM↔LM; CB, CM and ST grouped).</p>"
+        "in the other league at the same position group "
+        "(Centerback, Right Back, Left Back, Midfielders, Right Winger, Left Winger, Strikers).</p>"
         "<p style='margin-top:0.45rem'>Ranked by pass-metric z-scores. "
         "Click a row to compare maps and percentiles side by side.</p>"
         "</div></div></div>"
@@ -2072,7 +2073,8 @@ def render_similarity_section(
     st.caption(
         f"Select a player from {'Serie B' if sb_to_sa else 'Serie A'}; "
         f"the table shows the top {SIMILARITY_TOP_K} from {'Serie A' if sb_to_sa else 'Serie B'} "
-        "at the same position (side respected; CB, CM and ST grouped). Click a row to compare."
+        "at the same position group (Centerback, Right Back, Left Back, Midfielders, "
+        "Right Winger, Left Winger, Strikers). Click a row to compare."
     )
 
     if not all_players:

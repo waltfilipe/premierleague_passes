@@ -33,6 +33,7 @@ from comparison_config import (
 )
 from heuristic_scoring import (
     POSITION_GROUPS_ORDER,
+    comparison_position_group,
     is_outfield_position,
     position_group,
     rating_position_group,
@@ -56,7 +57,7 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 43
+DATA_CACHE_VERSION = 44
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
@@ -1620,7 +1621,8 @@ def compute_comparison_ratings(
 
     by_group: dict[str, list[dict]] = {}
     for player in pool_players:
-        by_group.setdefault(str(player.get("position_group") or "—"), []).append(player)
+        comp_group = comparison_position_group(player.get("position"))
+        by_group.setdefault(str(comp_group or "—"), []).append(player)
 
     pool_by_group: dict[str, list[dict]] = {}
     comparison_by_player: dict[str, dict[str, dict]] = {}

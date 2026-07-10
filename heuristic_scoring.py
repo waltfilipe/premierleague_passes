@@ -100,68 +100,103 @@ def shorten_position(position: str | None) -> str:
 
 
 POSITION_GROUPS_ORDER = (
-    "Zagueiros",
-    "Laterais-direitos",
-    "Laterais-esquerdos",
-    "Meio-campistas-centrais",
-    "Meio-campistas-laterais",
-    "Meias-ofensivos",
-    "Extremos-direitos",
-    "Extremos-esquerdos",
-    "Atacantes",
+    "centerbacks",
+    "fullbacks",
+    "midfielders",
+    "wingers",
+    "strikers",
+)
+
+COMPARISON_GROUPS_ORDER = (
+    "centerback",
+    "right-back",
+    "left-back",
+    "midfielders",
+    "right-winger",
+    "left-winger",
+    "strikers",
 )
 
 _RATING_POSITION_TO_GROUP: dict[str, str] = {
-    "CB": "Zagueiros",
-    "RCB": "Zagueiros",
-    "LCB": "Zagueiros",
-    "RB": "Laterais-direitos",
-    "RWB": "Laterais-direitos",
-    "LB": "Laterais-esquerdos",
-    "LWB": "Laterais-esquerdos",
-    "CM": "Meio-campistas-centrais",
-    "CDM": "Meio-campistas-centrais",
-    "DM": "Meio-campistas-centrais",
-    "RCM": "Meio-campistas-laterais",
-    "LCM": "Meio-campistas-laterais",
-    "RDM": "Meio-campistas-laterais",
-    "LDM": "Meio-campistas-laterais",
-    "CAM": "Meias-ofensivos",
-    "RW": "Extremos-direitos",
-    "RM": "Extremos-direitos",
-    "LW": "Extremos-esquerdos",
-    "LM": "Extremos-esquerdos",
-    "ST": "Atacantes",
-    "CF": "Atacantes",
-    "SS": "Atacantes",
-    "RCF": "Atacantes",
-    "LCF": "Atacantes",
+    "CB": "centerbacks",
+    "RCB": "centerbacks",
+    "LCB": "centerbacks",
+    "RB": "fullbacks",
+    "RWB": "fullbacks",
+    "LB": "fullbacks",
+    "LWB": "fullbacks",
+    "CM": "midfielders",
+    "CDM": "midfielders",
+    "DM": "midfielders",
+    "RCM": "midfielders",
+    "LCM": "midfielders",
+    "RDM": "midfielders",
+    "LDM": "midfielders",
+    "CAM": "midfielders",
+    "RW": "wingers",
+    "RM": "wingers",
+    "LW": "wingers",
+    "LM": "wingers",
+    "ST": "strikers",
+    "CF": "strikers",
+    "SS": "strikers",
+    "RCF": "strikers",
+    "LCF": "strikers",
+}
+
+_COMPARISON_POSITION_TO_GROUP: dict[str, str] = {
+    "CB": "centerback",
+    "RCB": "centerback",
+    "LCB": "centerback",
+    "RB": "right-back",
+    "RWB": "right-back",
+    "LB": "left-back",
+    "LWB": "left-back",
+    "CM": "midfielders",
+    "CDM": "midfielders",
+    "DM": "midfielders",
+    "RCM": "midfielders",
+    "LCM": "midfielders",
+    "RDM": "midfielders",
+    "LDM": "midfielders",
+    "CAM": "midfielders",
+    "RW": "right-winger",
+    "RM": "right-winger",
+    "LW": "left-winger",
+    "LM": "left-winger",
+    "ST": "strikers",
+    "CF": "strikers",
+    "SS": "strikers",
+    "RCF": "strikers",
+    "LCF": "strikers",
 }
 
 _POSITION_TO_GROUP = dict(_RATING_POSITION_TO_GROUP)
 
 POSITION_GROUP_LABELS: dict[str, str] = {
-    "Zagueiros": "Center Back",
-    "Laterais-direitos": "Right Back",
-    "Laterais-esquerdos": "Left Back",
-    "Meio-campistas-centrais": "Central Midfielder",
-    "Meio-campistas-laterais": "Wide Central Midfielder",
-    "Meias-ofensivos": "Attacking Midfielder",
-    "Extremos-direitos": "Right Winger",
-    "Extremos-esquerdos": "Left Winger",
-    "Atacantes": "Striker",
+    "centerbacks": "Centerbacks",
+    "fullbacks": "Fullbacks",
+    "midfielders": "Midfielders",
+    "wingers": "Wingers",
+    "strikers": "Strikers",
+}
+
+COMPARISON_GROUP_LABELS: dict[str, str] = {
+    "centerback": "Centerback",
+    "right-back": "Right Back",
+    "left-back": "Left Back",
+    "midfielders": "Midfielders",
+    "right-winger": "Right Winger",
+    "left-winger": "Left Winger",
+    "strikers": "Strikers",
 }
 
 _GROUP_COLORS = {
-    "Zagueiros": "#60a5fa",
-    "Laterais-direitos": "#34d399",
-    "Laterais-esquerdos": "#2dd4bf",
-    "Meio-campistas-centrais": "#fbbf24",
-    "Meio-campistas-laterais": "#f59e0b",
-    "Meias-ofensivos": "#fb923c",
-    "Extremos-direitos": "#f472b6",
-    "Extremos-esquerdos": "#e879f9",
-    "Atacantes": "#f87171",
+    "centerbacks": "#60a5fa",
+    "fullbacks": "#34d399",
+    "midfielders": "#fbbf24",
+    "wingers": "#f472b6",
+    "strikers": "#f87171",
 }
 
 
@@ -175,12 +210,27 @@ def position_group_label(group: str | None) -> str:
     return POSITION_GROUP_LABELS.get(text, text)
 
 
+def comparison_group_label(group: str | None) -> str:
+    if not group:
+        return "—"
+    text = str(group).strip()
+    return COMPARISON_GROUP_LABELS.get(text, text)
+
+
 def rating_position_group(short_pos: str | None) -> str | None:
     """Map short position to rating pool group; None for goalkeepers."""
     if not short_pos or short_pos in ("GK", "—"):
         return None
     pos = str(short_pos).strip().upper()
-    return _RATING_POSITION_TO_GROUP.get(pos, "Meio-campistas-centrais")
+    return _RATING_POSITION_TO_GROUP.get(pos, "midfielders")
+
+
+def comparison_position_group(short_pos: str | None) -> str | None:
+    """Map short position to similarity/comparison pool group; None for goalkeepers."""
+    if not short_pos or short_pos in ("GK", "—"):
+        return None
+    pos = str(short_pos).strip().upper()
+    return _COMPARISON_POSITION_TO_GROUP.get(pos, "midfielders")
 
 
 def position_group(short_pos: str | None) -> str | None:

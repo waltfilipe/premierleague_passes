@@ -62,31 +62,7 @@ SIMILARITY_WEIGHTS_C: dict[str, float] = {
     "aggression_aip_per_pass": 1.0,
 }
 
-SERIE_A_POSITION_TO_GROUP: dict[str, str] = {
-    "CB": "Zagueiros",
-    "CM": "Meio-campistas",
-    "ST": "Atacantes",
-}
-
-_CB_FAMILY = frozenset({"CB", "LCB", "RCB"})
-_CM_FAMILY = frozenset({"CM", "CDM", "CAM", "LCM", "RCM", "LDM", "RDM", "DM"})
-_ST_FAMILY = frozenset({"ST", "CF", "SS", "RCF", "LCF"})
-
-AGGREGATED_SIMILARITY_POSITIONS = ("CB", "CM", "ST")
-
-SIMILARITY_POSITION_LABELS: dict[str, str] = {
-    "CB": "Center Back (CB)",
-    "CM": "Central Midfielder (CM)",
-    "ST": "Striker (ST)",
-    "LB": "Left Back (LB)",
-    "RB": "Right Back (RB)",
-    "LWB": "Left Wing Back (LWB)",
-    "RWB": "Right Wing Back (RWB)",
-    "LM": "Left Midfielder (LM)",
-    "RM": "Right Midfielder (RM)",
-    "LW": "Left Winger (LW)",
-    "RW": "Right Winger (RW)",
-}
+from heuristic_scoring import COMPARISON_GROUP_LABELS, comparison_position_group
 
 TOP_K_DEFAULT = 10
 MIN_PASSES_SERIE_A = 100
@@ -430,26 +406,15 @@ def find_similar_option_c(
 
 
 def similarity_position_key(short_pos: str | None) -> str | None:
-    """Pool key for cross-league similarity: LB/LM/… exact; CB/CM/ST families merged."""
-    if not short_pos:
-        return None
-    pos = str(short_pos).strip().upper()
-    if not pos or pos in EXCLUDED_SEARCH_POSITIONS:
-        return None
-    if pos in _CB_FAMILY:
-        return "CB"
-    if pos in _CM_FAMILY:
-        return "CM"
-    if pos in _ST_FAMILY:
-        return "ST"
-    return pos
+    """Pool key for cross-league similarity (7 comparison groups)."""
+    return comparison_position_group(short_pos)
 
 
 def similarity_position_label(key: str | None) -> str:
     if not key:
         return "—"
-    text = str(key).strip().upper()
-    return SIMILARITY_POSITION_LABELS.get(text, text)
+    text = str(key).strip()
+    return COMPARISON_GROUP_LABELS.get(text, text)
 
 
 def player_search_position(player: dict) -> str | None:
@@ -458,7 +423,7 @@ def player_search_position(player: dict) -> str | None:
 
 
 def group_players_by_detailed_position(players: list[dict]) -> dict[str, list[dict]]:
-    """Group players by similarity pool key (side-aware except CB/CM/ST)."""
+    """Group players by comparison pool key (7 position groups)."""
     return group_players_by_similarity_position(players)
 
 
@@ -468,7 +433,7 @@ def similarity_search_pool(
 ) -> list[dict]:
     if not position:
         return []
-    key = str(position).strip().upper()
+    key = str(position).strip()
     return list(players_by_position.get(key, []))
 
 
