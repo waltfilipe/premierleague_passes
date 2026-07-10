@@ -1213,78 +1213,109 @@ st.markdown(
         white-space: nowrap;
     }
     section[data-testid="stSidebar"] { display: none; }
-    .pa-shell { max-width: 1180px; margin: 0 auto 1.25rem auto; }
-    .pa-header {
-        background: linear-gradient(145deg, #172035 0%, #101522 58%, #0f172a 100%);
-        border: 1px solid #334155;
-        border-radius: 14px;
-        padding: 1rem 1.2rem;
-        margin: 0.35rem 0 0.75rem 0;
-        box-shadow: 0 10px 28px rgba(2, 6, 23, 0.28);
-    }
-    .pa-header-top {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 1rem;
-        flex-wrap: wrap;
-    }
-    .pa-header-title {
-        margin: 0;
-        color: #f8fafc;
-        font-size: 1.5rem;
-        font-weight: 800;
-        letter-spacing: -0.02em;
-        line-height: 1.15;
-    }
-    .pa-header-meta {
-        margin: 0.28rem 0 0 0;
-        color: #94a3b8;
-        font-size: 0.88rem;
-    }
-    .pa-header-badges {
-        display: inline-flex;
-        flex-wrap: wrap;
-        gap: 0.35rem;
-        margin-top: 0.4rem;
-    }
-    .pa-header-chip {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.22rem 0.55rem;
-        border-radius: 999px;
-        border: 1px solid #334155;
-        background: rgba(15, 23, 42, 0.72);
-        color: #cbd5e1;
-        font-size: 0.74rem;
-        font-weight: 600;
-    }
+    .pa-shell { max-width: 1380px; margin: 0 auto 1.25rem auto; }
     .pa-toggles { margin: 0.15rem 0 0.75rem 0; }
     .pa-layout {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 300px;
-        gap: 0.8rem;
+        grid-template-columns: minmax(250px, 1fr) minmax(250px, 290px) minmax(300px, 1.2fr);
+        gap: 0.75rem;
         align-items: start;
     }
-    @media (max-width: 980px) {
+    @media (max-width: 1100px) {
         .pa-layout { grid-template-columns: 1fr; }
     }
-    .pa-layout-body {
+    .pa-col {
         display: flex;
         flex-direction: column;
         gap: 0.65rem;
         min-width: 0;
     }
-    .pa-layout-side {
+    .pa-col-score {
+        position: sticky;
+        top: 0.75rem;
+    }
+    .pa-identity-card {
+        padding: 1rem 1.05rem 0.95rem;
+        margin-bottom: 0;
         display: flex;
         flex-direction: column;
         gap: 0.65rem;
-        position: sticky;
-        top: 0.75rem;
+        height: 100%;
+    }
+    .pa-identity-top {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+    .pa-identity-title {
+        margin: 0;
+        color: #f8fafc;
+        font-size: 1.35rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1.15;
+    }
+    .pa-identity-meta {
+        margin: 0;
+        color: #94a3b8;
+        font-size: 0.86rem;
+        line-height: 1.4;
+    }
+    .pa-identity-chip {
+        display: inline-flex;
+        align-self: flex-start;
+        align-items: center;
+        padding: 0.2rem 0.5rem;
+        border-radius: 999px;
+        border: 1px solid #334155;
+        background: rgba(15, 23, 42, 0.72);
+        color: #cbd5e1;
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+    .pa-identity-badges {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+    .pa-identity-divider {
+        height: 1px;
+        background: #243049;
+        margin: 0.1rem 0;
+    }
+    .pa-section-label {
+        margin: 0;
+        color: #8fa3bf;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+    .pa-participation-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0.42rem;
+    }
+    .pa-participation-stack .metric-line {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.65rem;
+        background: rgba(15, 23, 42, 0.45);
+        border: 1px solid #243049;
+        border-radius: 8px;
+        padding: 0.45rem 0.58rem;
+        margin: 0;
+    }
+    .pa-participation-stack .stat-val {
+        font-size: 0.95rem;
+        font-weight: 800;
+        color: #f8fafc;
     }
     .pa-rating-panel {
         padding: 0.95rem 1rem 0.9rem;
         text-align: center;
+        margin-bottom: 0;
     }
     .pa-rating-panel-label {
         color: #8fa3bf;
@@ -1312,61 +1343,22 @@ st.markdown(
         justify-content: center;
         margin-top: 0.45rem;
     }
-    .pa-participation-card { padding: 0.85rem 1rem; margin-bottom: 0; }
-    .pa-participation-card h4 {
-        margin: 0 0 0.55rem 0;
-        color: #8fa3bf;
-        font-size: 0.68rem;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-    }
-    .pa-participation-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.45rem 0.75rem;
-    }
-    .pa-participation-grid .metric-line {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.18rem;
-        background: rgba(15, 23, 42, 0.45);
-        border: 1px solid #243049;
-        border-radius: 8px;
-        padding: 0.48rem 0.58rem;
-        margin: 0;
-    }
-    .pa-participation-grid .metric-line > span:last-child {
-        text-align: left !important;
-        width: 100%;
-    }
-    .pa-participation-grid .stat-val {
-        font-size: 1rem;
-        font-weight: 800;
-        color: #f8fafc;
-    }
-    @media (max-width: 720px) {
-        .pa-participation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    .pa-pillars-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.55rem;
-    }
-    @media (max-width: 720px) {
-        .pa-pillars-grid { grid-template-columns: 1fr; }
-    }
-    .pa-pillars-grid .grade-accordion { margin-bottom: 0; }
-    .pa-layout-side .radar-card {
+    .pa-col-score .radar-card {
         margin-bottom: 0;
         padding: 0.85rem 0.95rem 0.95rem;
+        flex: 1;
     }
-    .pa-layout-side .radar-card-body { min-height: 210px; }
-    .pa-layout-side .rating-radar-wrap {
+    .pa-col-score .radar-card-body { min-height: 200px; }
+    .pa-col-score .rating-radar-wrap {
         max-width: 100%;
-        height: 230px;
+        height: 220px;
     }
+    .pa-pillars-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .pa-pillars-stack .grade-accordion { margin-bottom: 0; }
     .pa-panel {
         background: linear-gradient(160deg, #151b2b 0%, #101522 100%);
         border: 1px solid #2a3550;
@@ -2326,7 +2318,7 @@ def render_dashboard_sidebar(player: dict, **kwargs) -> None:
     st.html(_build_dashboard_sidebar_html(player, **kwargs), width="stretch")
 
 
-def _build_player_analysis_participation_html(
+def _build_player_analysis_identity_card_html(
     player: dict,
     participation_keys: tuple[str, ...],
     *,
@@ -2336,26 +2328,40 @@ def _build_player_analysis_participation_html(
     fmt_pct_fn,
     fmt_stat_fn,
 ) -> str:
+    search_pos = sim.player_search_position(player)
+    group_label = sim.similarity_position_label(search_pos) if search_pos else "—"
+    badges = _rating_badges_html(player)
+    badges_block = (
+        f'<div class="pa-identity-badges">{badges}</div>' if badges else ""
+    )
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
-    lines = []
-    for key in participation_keys:
-        lines.append(
-            _metric_line_html(
-                label_fn(key),
-                key,
-                _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
-                metric_ranks,
-                player=player,
-                show_rank=True,
-                label_fn=label_fn,
-                tooltip_fn=tooltip_fn,
-                rank_in_group_fn=rank_in_group_fn,
-            )
+    participation_lines = "".join(
+        _metric_line_html(
+            label_fn(key),
+            key,
+            _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
+            metric_ranks,
+            player=player,
+            show_rank=True,
+            label_fn=label_fn,
+            tooltip_fn=tooltip_fn,
+            rank_in_group_fn=rank_in_group_fn,
         )
+        for key in participation_keys
+    )
     return (
-        '<div class="player-card pa-participation-card">'
-        "<h4>Participation</h4>"
-        f'<div class="pa-participation-grid">{"".join(lines)}</div>'
+        '<div class="player-card pa-identity-card">'
+        '<div class="pa-identity-top">'
+        f'<h2 class="pa-identity-title">{html.escape(str(player.get("player_name", "—")))}</h2>'
+        f'<p class="pa-identity-meta">{html.escape(str(player.get("team", "—")))} · '
+        f'{html.escape(str(player.get("position", "—")))} · '
+        f'{html.escape(group_label)}</p>'
+        '<span class="pa-identity-chip">Premier League</span>'
+        f"{badges_block}"
+        "</div>"
+        '<div class="pa-identity-divider"></div>'
+        '<p class="pa-section-label">Participation</p>'
+        f'<div class="pa-participation-stack">{participation_lines}</div>'
         "</div>"
     )
 
@@ -2395,7 +2401,7 @@ def _build_player_analysis_layout_html(
         confidence_minutes=confidence_minutes,
         confidence_passes=confidence_passes,
     )
-    participation_card = _build_player_analysis_participation_html(
+    identity_card = _build_player_analysis_identity_card_html(
         player,
         participation_keys,
         label_fn=label_fn,
@@ -2421,14 +2427,12 @@ def _build_player_analysis_layout_html(
     )
     return (
         '<div class="pa-layout">'
-        '<div class="pa-layout-body">'
-        f"{participation_card}"
-        f'<div class="pa-pillars-grid">{pillar_html}</div>'
-        "</div>"
-        '<div class="pa-layout-side">'
+        f'<div class="pa-col pa-col-identity">{identity_card}</div>'
+        '<div class="pa-col pa-col-score">'
         f"{rating_panel}"
         f"{radar_card}"
         "</div>"
+        f'<div class="pa-col pa-col-pillars"><div class="pa-pillars-stack">{pillar_html}</div></div>'
         "</div>"
     )
 
@@ -2880,29 +2884,6 @@ def render_progression_maps_only(player: dict, passes, carries) -> None:
         st.pyplot(fig_heat_threat, clear_figure=True, use_container_width=True)
 
 
-def _player_analysis_header_html(player: dict) -> str:
-    search_pos = sim.player_search_position(player)
-    group_label = sim.similarity_position_label(search_pos) if search_pos else "—"
-    badges = _rating_badges_html(player)
-    badges_block = (
-        f'<div class="pa-header-badges">{badges}</div>' if badges else ""
-    )
-    return (
-        '<div class="pa-header">'
-        '<div class="pa-header-top">'
-        "<div>"
-        f'<h2 class="pa-header-title">{html.escape(str(player.get("player_name", "—")))}</h2>'
-        f'<p class="pa-header-meta">{html.escape(str(player.get("team", "—")))} · '
-        f'{html.escape(str(player.get("position", "—")))} · '
-        f'{html.escape(group_label)}</p>'
-        f"{badges_block}"
-        "</div>"
-        '<span class="pa-header-chip">Premier League</span>'
-        "</div>"
-        "</div>"
-    )
-
-
 def _sync_player_analysis_selection(
     players_by_id: dict[str, dict],
     label_by_id: dict[str, str],
@@ -3085,7 +3066,6 @@ def render_player_analysis_section(
         return
 
     st.markdown('<div class="pa-shell">', unsafe_allow_html=True)
-    st.markdown(_player_analysis_header_html(player), unsafe_allow_html=True)
 
     st.markdown('<div class="pa-toggles">', unsafe_allow_html=True)
     toggle_maps, toggle_similar, _ = st.columns([1.1, 1.35, 2.55], gap="small")
