@@ -82,12 +82,179 @@ rank_to_display_score = pe.rank_to_display_score
 score_display_color = pe.score_display_color
 rate_player_vs_eligible_pool = pe.rate_player_vs_eligible_pool
 enrich_player_eligibility = pe.enrich_player_eligibility
+RATING_CONFIDENCE_MINUTES = pe.RATING_CONFIDENCE_MINUTES
+RATING_CONFIDENCE_PASSES = pe.RATING_CONFIDENCE_PASSES
+
 
 
 def fmt_rating_score(pass_rating) -> str:
     if pass_rating is None:
         return "—"
     return f"{float(pass_rating) * 10.0:.1f}"
+
+def _rating_confidence_value(player: dict) -> float:
+    conf = player.get("rating_confidence")
+    if conf is not None:
+        return float(conf)
+    minutes = float(player.get("minutes") or 0)
+    passes = float(player.get("passes_completed") or 0)
+    pass_ref = max(float(player.get("position_p25_passes") or RATING_CONFIDENCE_PASSES), 1.0)
+    return min(1.0, minutes / RATING_CONFIDENCE_MINUTES) * min(1.0, passes / pass_ref)
+
+
+def _is_low_sample_rating(player: dict) -> bool:
+    return _rating_confidence_value(player) < 0.999
+
+
+def _low_sample_tooltip(player: dict) -> str:
+    return "Small sample in position group."
+
+
+def _rating_sample_warning_html(player: dict, *, soft: bool = False) -> str:
+    if not _is_low_sample_rating(player):
+        return ""
+    tip = html.escape(_low_sample_tooltip(player))
+    if soft:
+        icon = '<span class="rating-warning rating-warning-soft">⚠</span>'
+    else:
+        icon = '<span class="rating-warning">⚠</span>'
+    return (
+        '<span class="rating-warning-tip rating-sample-tip">'
+        f"{icon}"
+        f'<span class="rating-sample-tipbox">{tip}</span>'
+        "</span>"
+    )
+
+
+def _rating_score_value_html(player: dict) -> str:
+    rating_val = player.get("pass_rating")
+    if rating_val is None:
+        return "—"
+    return html.escape(fmt_rating_score(rating_val))
+
+
+def _rating_score_html(player: dict, *, soft_warning: bool = False) -> str:
+    return (
+        f"{_rating_score_value_html(player)}"
+        f"{_rating_sample_warning_html(player, soft=soft_warning)}"
+    )
+
+
+def fmt_rating_percentile(player: dict) -> str:
+    pct = player.get("rating_percentile")
+    if pct is None:
+        return "—"
+    return f"P{int(round(float(pct) * 100))}"
+
+
+def _rating_badges_html(player: dict) -> str:
+    badges: list[str] = []
+    if player.get("rating_pareto_badge"):
+        badges.append(
+            '<span class="rating-badge-tip">'
+            '<span class="rating-achievement-dot pareto"></span>'
+            '<span class="rating-tipbox">Versatile</span>'
+            "</span>"
+        )
+    if player.get("rating_archetype_badge"):
+        badges.append(
+            '<span class="rating-badge-tip">'
+            '<span class="rating-achievement-dot archetype"></span>'
+            '<span class="rating-tipbox">Complete</span>'
+            "</span>"
+        )
+    if not badges:
+        return ""
+    return f'<span class="rating-badge-row">{"".join(badges)}</span>'
+
+_PILLAR_RADAR_LABELS: dict[str, str] = {
+    "metrics_absolute": "P90",
+    "metrics_relative": "Eff",
+    "long_balls": "Vrt",
+    "construction": "Cst",
+    "aggression": "Atq",
+}
+
+
+def _pillar_radar_b64(player: dict) -> str:
+    import base64
+    import io
+
+    import matplotlib
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    matplotlib.use("Agg")
+
+    section_ratings = player.get("section_ratings") if isinstance(player.get("section_ratings"), dict) else {}
+    labels: list[str] = []
+    values: list[float] = []
+    for section_key, _, _, _ in SCOUT_SECTION_SPECS:
+        score = section_ratings.get(section_key)
+        if score is None:
+            continue
+        labels.append(_PILLAR_RADAR_LABELS.get(section_key, section_key[:6]))
+        values.append(float(score) * 10.0)
+    if len(values) < 3:
+        return ""
+
+    count = len(values)
+    angles = np.linspace(0, 2 * np.pi, count, endpoint=False)
+    values_closed = values + [values[0]]
+    angles_closed = np.append(angles, angles[0])
+    low_sample = _is_low_sample_rating(player)
+    line_alpha = 0.55 if low_sample else 0.95
+    fill_alpha = 0.12 if low_sample else 0.22
+
+    fig, ax = plt.subplots(
+        figsize=(3.4, 3.4),
+        subplot_kw={"polar": True},
+        facecolor="none",
+    )
+    fig.patch.set_alpha(0.0)
+    ax.set_facecolor("none")
+    ax.set_theta_offset(np.pi / 2)
+    ax.set_theta_direction(-1)
+    ax.plot(angles_closed, values_closed, color="#60a5fa", linewidth=2.4, alpha=line_alpha)
+    ax.fill(angles_closed, values_closed, color="#60a5fa", alpha=fill_alpha)
+    ax.set_ylim(4.0, 8.0)
+    ax.set_yticks([5, 6, 7])
+    ax.set_yticklabels([])
+    ax.set_xticks(angles)
+    ax.set_xticklabels(labels, fontsize=9.5, color="#cbd5e1", fontweight=600)
+    ax.tick_params(axis="x", pad=10)
+    ax.grid(color="#334155", alpha=0.5, linewidth=0.7)
+    ax.spines["polar"].set_color("#334155")
+    ax.spines["polar"].set_alpha(0.55)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=200, transparent=True, bbox_inches="tight", pad_inches=0.06)
+    plt.close(fig)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _pillar_radar_inner_html(player: dict) -> str:
+    b64 = _pillar_radar_b64(player)
+    if not b64:
+        return ""
+    return (
+        '<span class="rating-radar-wrap" title="5 pillar scores">'
+        f'<img class="rating-radar" src="data:image/png;base64,{b64}" alt="Pillar radar">'
+        "</span>"
+    )
+
+
+def _pillar_radar_card_html(player: dict) -> str:
+    inner = _pillar_radar_inner_html(player)
+    if not inner:
+        return ""
+    return (
+        '<div class="player-card radar-card">'
+        '<div class="radar-card-title">Pillar profile</div>'
+        f'<div class="radar-card-body">{inner}</div>'
+        "</div>"
+    )
 
 APP_NAME = "Pass Scout"
 APP_LEAGUE = "Premier League"
@@ -114,6 +281,137 @@ st.markdown(
         margin-top: 0.75rem;
     }
     .player-info-card .rating-row { margin-top: 0.75rem; }
+    .player-meta-rating-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-top: 0.1rem;
+    }
+    .player-sub-line {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        color: #94a3b8;
+        font-size: 0.85rem;
+        min-width: 0;
+    }
+    .player-rating-slot {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.35rem;
+        flex-shrink: 0;
+    }
+    .radar-card {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        padding: 0.95rem 1rem 1.05rem;
+    }
+    .radar-card-title {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #8fa3bf;
+        margin-bottom: 0.55rem;
+    }
+    .radar-card-body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 240px;
+    }
+    .radar-card .rating-radar-wrap {
+        width: 100%;
+        max-width: 300px;
+        height: 280px;
+    }
+    .radar-card .rating-radar {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+    }
+    .rating-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.28rem;
+        min-width: 0;
+    }
+    .rating-box-low-sample {
+        border-style: dashed !important;
+        border-width: 2px !important;
+        border-color: rgba(0, 0, 0, 0.72) !important;
+    }
+    .rating-box-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+    .rating-warning-soft {
+        font-size: 0.68rem;
+        font-weight: 700;
+        color: #d4a017;
+        opacity: 0.82;
+        filter: none;
+    }
+    .rating-radar-wrap {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 148px;
+        height: 148px;
+    }
+    .rating-radar {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+    }
+    .rating-cell-wrap {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.2rem;
+        white-space: nowrap;
+    }
+    .rating-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        align-items: center;
+    }
+    .rating-badge-tip {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        cursor: help;
+    }
+    .rating-achievement-dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        flex-shrink: 0;
+        border: 1px solid rgba(255,255,255,0.28);
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.18);
+    }
+    .rating-achievement-dot.pareto { background: #38bdf8; }
+    .rating-achievement-dot.archetype { background: #a78bfa; }
+    .rating-badge-tip:hover .rating-tipbox {
+        display: block;
+        white-space: normal;
+        max-width: 220px;
+        text-align: left;
+        font-weight: 500;
+        line-height: 1.35;
+    }
+
     .player-info-card .header-stat strong { font-size: 0.98rem; }
     .header-stat {
         font-size: 0.84rem;
@@ -192,7 +490,7 @@ st.markdown(
         position: relative;
         display: inline-flex;
     }
-    .rank-tipbox, .rating-tipbox {
+    .rank-tipbox, .rating-tipbox, .rating-rank-tipbox, .rating-sample-tipbox {
         display: none;
         position: absolute;
         z-index: 100;
@@ -211,8 +509,10 @@ st.markdown(
         pointer-events: none;
     }
     .rank-tip:hover .rank-tipbox,
-    .rating-tip:hover .rating-tipbox,
+    .rating-tip:hover .rating-rank-tipbox,
     .section-rating-tip:hover .rating-tipbox,
+    .rating-sample-tip:hover .rating-sample-tipbox,
+    .rating-badge-tip:hover .rating-tipbox,
     .rating-warning-tip:hover .rating-tipbox,
     .metric-tip:hover .metric-tipbox {
         display: block;
@@ -915,13 +1215,13 @@ def _rating_table_rows_html(rows: list[dict], *, selected_player_id: str | None)
     body = []
     for row in rows:
         pid = html.escape(str(row["player_id"]))
-        rating_txt = fmt_rating_score(float(row["Rating"]))
+        rating_txt = _rating_score_html(row, soft_warning=True)
         sel = " sel" if selected_player_id and str(row["player_id"]) == str(selected_player_id) else ""
         body.append(
             f'<tr class="row{sel}" data-pid="{pid}" onclick="pickPlayer(\'{pid}\')">'
             f"<td>{html.escape(str(row['Player']))}</td>"
             f"<td class='team'>{html.escape(str(row['Team']))}</td>"
-            f'<td class="rating">{rating_txt}</td>'
+            f'<td class="rating"><span class="rating-cell-wrap">{rating_txt}</span></td>'
             "</tr>"
         )
     return (
@@ -950,7 +1250,15 @@ _RANKING_EMBED_CSS = """
 .rx tr.row{cursor:default}
 .rx tr:last-child td{border-bottom:none}
 .team{color:#9fb0c7;font-size:0.8rem}
-.rating{font-weight:700;color:#dbeafe;text-align:right}
+.rating{font-weight:700;color:#dbeafe;text-align:right;white-space:nowrap}
+.rating-cell-wrap{display:inline-flex;align-items:center;justify-content:flex-end;gap:0.2rem;white-space:nowrap}
+.rating-warning{font-size:1rem;line-height:1;cursor:help;color:#fbbf24}
+.rating-warning-soft{font-size:0.68rem;font-weight:700;color:#d4a017;opacity:0.82}
+.rating-warning-tip{position:relative;display:inline-flex;align-items:center}
+.rating-sample-tipbox{display:none;position:absolute;z-index:111;left:50%;top:calc(100% + 8px);transform:translateX(-50%);
+  background:#111827;border:1px solid #3d4f6f;border-radius:6px;padding:4px 8px;font-size:0.72rem;font-weight:500;
+  color:#e2e8f0;white-space:normal;max-width:220px;line-height:1.35;box-shadow:0 8px 20px rgba(0,0,0,.4);pointer-events:none}
+.rating-sample-tip:hover .rating-sample-tipbox{display:block}
 """
 
 
@@ -1001,7 +1309,16 @@ def _rating_groups_from_rated(rated: list[dict]) -> list[tuple[str, list[dict]]]
                 "player_id": p["player_id"],
                 "Player": p["player_name"],
                 "Team": p["team"],
-                "Rating": p["pass_rating"],
+                "pass_rating": p.get("pass_rating"),
+                "minutes": p.get("minutes"),
+                "passes_completed": p.get("passes_completed"),
+                "rating_confidence": p.get("rating_confidence"),
+                "rating_percentile": p.get("rating_percentile"),
+                "rating_uncertainty": p.get("rating_uncertainty"),
+                "rating_pareto_badge": p.get("rating_pareto_badge"),
+                "rating_pareto_dims": p.get("rating_pareto_dims"),
+                "rating_archetype_badge": p.get("rating_archetype_badge"),
+                "rating_archetype_rank": p.get("rating_archetype_rank"),
                 "metric_ranks": p.get("metric_ranks", {}),
             }
             for p in subset
@@ -1062,14 +1379,13 @@ def render_rating_table(
     body = []
     for row in rows:
         pid = html.escape(str(row["player_id"]))
-        rating = float(row["Rating"])
-        rating_txt = fmt_rating_score(rating)
+        rating_txt = _rating_score_html(row, soft_warning=True)
         sel = " sel" if selected_player_id and str(row["player_id"]) == str(selected_player_id) else ""
         body.append(
             f'<tr class="row{sel}" data-pid="{pid}" onclick="pickPlayer(\'{pid}\')">'
             f"<td>{html.escape(str(row['Player']))}</td>"
             f"<td class='team'>{html.escape(str(row['Team']))}</td>"
-            f'<td class="rating">{rating_txt}</td>'
+            f'<td class="rating"><span class="rating-cell-wrap">{rating_txt}</span></td>'
             "</tr>"
         )
 
@@ -1118,14 +1434,20 @@ function pickPlayer(pid) {{
 def _rating_warnings_html(player: dict) -> str:
     warnings: list[str] = []
     if not player.get("eligible_minutes", True):
-        warnings.append("Below 30% of team minutes")
+        min_minutes_pct = player.get("position_min_minutes_pct")
+        if min_minutes_pct is not None:
+            warnings.append(
+                f"Minutes below group P25 (min. {fmt_pct(float(min_minutes_pct) * 100.0)})"
+            )
+        else:
+            warnings.append("Insufficient minutes for eligibility")
     if not player.get("eligible_passes", True):
         min_passes = player.get("position_min_passes")
         if min_passes is not None:
             min_txt = fmt_stat_value("passes_completed", min_passes)
-            warnings.append(f"Below position pass threshold (min. {min_txt})")
+            warnings.append(f"Passes below group P25 (min. {min_txt})")
         else:
-            warnings.append("Below position pass threshold")
+            warnings.append("Insufficient passes for eligibility")
     return "".join(
         '<span class="rating-warning-tip">'
         '<span class="rating-warning">⚠</span>'
@@ -1264,35 +1586,40 @@ def _build_sections_html(
     return "".join(parts)
 
 
-def _rating_header_html(player: dict, metric_ranks: dict) -> str:
+def _player_rating_slot_html(player: dict, metric_ranks: dict) -> str:
     rating_val = player.get("pass_rating")
-    rating_txt = fmt_rating_score(rating_val) if rating_val is not None else "—"
     rating_info = metric_ranks.get("pass_rating")
-    is_solo = bool(player.get("rating_is_solo"))
+    badges = _rating_badges_html(player)
+    low_sample = _is_low_sample_rating(player)
+    low_cls = " rating-box-low-sample" if low_sample and rating_val is not None else ""
+    score_inner = _rating_score_value_html(player)
+    sample_warning = _rating_sample_warning_html(player)
 
     if rating_info and rating_val is not None:
         r_color = rating_value_color(rating_val)
         r_txt = _badge_text_color(r_color)
         rank_txt = f'{int(rating_info["rank"])}/{int(rating_info["total"])}'
-        if is_solo:
-            rank_txt += " · solo"
-        elif player.get("rating_is_compared"):
-            rank_txt += " · vs eligible"
         rating_box = (
+            f'<span class="rating-box-wrap">'
             f'<span class="rating-tip">'
-            f'<div class="rating-box" style="background:{r_color};color:{r_txt};margin-bottom:0">'
-            f"{html.escape(rating_txt)}</div>"
-            f'<span class="rating-tipbox">{html.escape(rank_txt)}</span>'
+            f'<div class="rating-box{low_cls}" style="background:{r_color};color:{r_txt};margin-bottom:0">'
+            f"{score_inner}</div>"
+            f'<span class="rating-rank-tipbox">{html.escape(rank_txt)}</span>'
+            f"</span>"
+            f"{sample_warning}"
             f"</span>"
         )
     else:
         rating_box = (
-            f'<div class="rating-box" style="background:#334155;color:#f8fafc;margin-bottom:0">'
-            f"{html.escape(rating_txt)}</div>"
+            f'<span class="rating-box-wrap">'
+            f'<div class="rating-box{low_cls}" style="background:#334155;color:#f8fafc;margin-bottom:0">'
+            f"{score_inner}</div>"
+            f"{sample_warning}"
+            f"</span>"
         )
 
-    warnings = _rating_warnings_html(player)
-    return f'<div class="rating-row">{rating_box}{warnings}</div>'
+    badges_html = f'<div class="rating-meta">{badges}</div>' if badges else ""
+    return f'<div class="player-rating-slot">{rating_box}{badges_html}</div>'
 
 
 def _section_grade_summary_bits(
@@ -1370,21 +1697,30 @@ def _build_dashboard_sidebar_html(player: dict) -> str:
         ),
     ]
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
-    general_card = (
+    sub_line = (
+        f"{html.escape(player.get('team', '—'))} · "
+        f"{html.escape(str(player.get('position', '—')))}"
+        f"{_rating_warnings_html(player)}"
+    )
+    profile_card = (
         '<div class="player-card player-info-card">'
         f"<h3>{html.escape(player['player_name'])}</h3>"
-        f'<div class="sub">{html.escape(player.get("team", "—"))} · {html.escape(str(player.get("position", "—")))}</div>'
-        f"{_rating_header_html(player, metric_ranks)}"
+        '<div class="player-meta-rating-row">'
+        f'<div class="player-sub-line">{sub_line}</div>'
+        f"{_player_rating_slot_html(player, metric_ranks)}"
+        "</div>"
         + _build_sections_html(player, metric_ranks, general_sections)
         + "</div>"
     )
+    radar_card = _pillar_radar_card_html(player)
     pillar_html = "".join(
-        _section_grade_accordion_html(player, section_key, title, keys, open=(i == 0))
-        for i, (section_key, title, _subtitle, keys) in enumerate(SCOUT_SECTION_SPECS)
+        _section_grade_accordion_html(player, section_key, title, keys, open=False)
+        for section_key, title, _subtitle, keys in SCOUT_SECTION_SPECS
     )
     return (
         '<div class="sidebar-stack dashboard-sidebar-stack">'
-        f"{general_card}"
+        f"{profile_card}"
+        f"{radar_card}"
         f"{pillar_html}"
         "</div>"
     )
@@ -1510,14 +1846,6 @@ def render_map_section(
 
 
 def render_rating_section(rated: list[dict], *, selected_player_id: str | None) -> None:
-    st.markdown(
-        '<div class="pres-card"><h4>Ranking by position group</h4>'
-        "<p>Rating = average of 6 dimensions (60% efficiency · 40% volume), with shrinkage and rank/percentile blend. "
-        "Scale: 1st = 9.0 · median = 6.0 · last = 3.0. "
-        f"Eligible: minutes and passes ≥ P25 of group (P{RATING_ELIGIBILITY_PERCENTILE} reference). "
-        "Click a player to open the Dashboard.</p></div>",
-        unsafe_allow_html=True,
-    )
     render_rating_board(_rating_groups_from_rated(rated), selected_player_id=selected_player_id)
 
 
