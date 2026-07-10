@@ -1228,19 +1228,33 @@ st.markdown(
     .pa-col {
         display: flex;
         flex-direction: column;
-        gap: 0.65rem;
+        gap: 0;
         min-width: 0;
+        height: 100%;
     }
     .pa-col-score {
         display: flex;
         flex-direction: column;
+        height: 100%;
+    }
+    .pa-score-stack {
+        display: flex;
+        flex-direction: column;
         gap: 0.65rem;
-        position: sticky;
-        top: 0.75rem;
-        align-self: start;
+        height: 100%;
+        flex: 1;
     }
     .pa-col-pillars {
         min-width: 0;
+        height: 100%;
+    }
+    .pa-pillars-card {
+        height: 100%;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        padding: 0.85rem 0.75rem 0.9rem;
+        margin-bottom: 0;
     }
     .pa-identity-card {
         padding: 1rem 1.05rem 0.95rem;
@@ -1326,9 +1340,10 @@ st.markdown(
         white-space: nowrap;
     }
     .pa-rating-panel {
-        padding: 0.95rem 1rem 0.9rem;
+        padding: 0.85rem 1rem 0.8rem;
         text-align: center;
         margin-bottom: 0;
+        flex-shrink: 0;
     }
     .pa-rating-panel-label {
         color: #8fa3bf;
@@ -1358,7 +1373,7 @@ st.markdown(
     }
     .pa-col-score .radar-card {
         margin-bottom: 0;
-        padding: 0.85rem 0.95rem 1rem;
+        padding: 0.75rem 0.85rem 0.85rem;
         flex: 1;
         display: flex;
         flex-direction: column;
@@ -1366,20 +1381,45 @@ st.markdown(
     }
     .pa-col-score .radar-card-body {
         flex: 1;
-        min-height: 300px;
-        align-items: stretch;
+        min-height: 0;
+        max-height: 220px;
+        align-items: center;
+        justify-content: center;
     }
     .pa-col-score .rating-radar-wrap {
         width: 100%;
-        height: 100%;
-        min-height: 300px;
-        max-width: none;
+        height: auto;
+        max-height: 200px;
+        max-width: 200px;
+        margin: 0 auto;
+    }
+    .pa-col-score .rating-radar {
+        width: 100%;
+        height: auto;
+        max-height: 200px;
+        object-fit: contain;
     }
     .pa-pillars-stack {
         display: flex;
         flex-direction: column;
-        gap: 0.42rem;
-        height: 100%;
+        gap: 0.35rem;
+        flex: 1;
+    }
+    .pa-pillar-group-label {
+        margin: 0.55rem 0 0.3rem 0;
+        color: #93c5fd;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+    .pa-pillar-group-label:first-child {
+        margin-top: 0;
+    }
+    .pa-pillar-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.38rem;
     }
     .pa-pillars-stack .grade-accordion {
         margin-bottom: 0;
@@ -2418,6 +2458,49 @@ def _build_player_analysis_identity_card_html(
     )
 
 
+def _build_player_analysis_pillars_html(
+    player: dict,
+    scout_section_specs,
+    *,
+    label_fn,
+    tooltip_fn,
+    rank_in_group_fn,
+    fmt_pct_fn,
+    fmt_stat_fn,
+) -> str:
+    def _accordions_for(sections: tuple) -> str:
+        return "".join(
+            _section_grade_accordion_html(
+                player,
+                section_key,
+                title,
+                keys,
+                open=False,
+                label_fn=label_fn,
+                tooltip_fn=tooltip_fn,
+                rank_in_group_fn=rank_in_group_fn,
+                fmt_pct_fn=fmt_pct_fn,
+                fmt_stat_fn=fmt_stat_fn,
+            )
+            for section_key, title, _subtitle, keys in sections
+        )
+
+    pass_sections = tuple(s for s in scout_section_specs if str(s[0]).startswith("pass_"))
+    carry_sections = tuple(s for s in scout_section_specs if str(s[0]).startswith("carry_"))
+    groups = []
+    if pass_sections:
+        groups.append(
+            '<p class="pa-pillar-group-label">Passing</p>'
+            f'<div class="pa-pillar-group">{_accordions_for(pass_sections)}</div>'
+        )
+    if carry_sections:
+        groups.append(
+            '<p class="pa-pillar-group-label">Carrying</p>'
+            f'<div class="pa-pillar-group">{_accordions_for(carry_sections)}</div>'
+        )
+    return "".join(groups)
+
+
 def _build_player_analysis_layout_html(
     player: dict,
     *,
@@ -2452,7 +2535,7 @@ def _build_player_analysis_layout_html(
         pillar_labels=pillar_labels or _PROGRESSION_PILLAR_RADAR_LABELS,
         confidence_minutes=confidence_minutes,
         confidence_passes=confidence_passes,
-        radar_figsize=(4.5, 4.5),
+        radar_figsize=(3.4, 3.4),
     )
     identity_card = _build_player_analysis_identity_card_html(
         player,
@@ -2463,29 +2546,27 @@ def _build_player_analysis_layout_html(
         fmt_pct_fn=fmt_pct_fn,
         fmt_stat_fn=fmt_stat_fn,
     )
-    pillar_html = "".join(
-        _section_grade_accordion_html(
-            player,
-            section_key,
-            title,
-            keys,
-            open=False,
-            label_fn=label_fn,
-            tooltip_fn=tooltip_fn,
-            rank_in_group_fn=rank_in_group_fn,
-            fmt_pct_fn=fmt_pct_fn,
-            fmt_stat_fn=fmt_stat_fn,
-        )
-        for section_key, title, _subtitle, keys in scout_section_specs
+    pillar_html = _build_player_analysis_pillars_html(
+        player,
+        scout_section_specs,
+        label_fn=label_fn,
+        tooltip_fn=tooltip_fn,
+        rank_in_group_fn=rank_in_group_fn,
+        fmt_pct_fn=fmt_pct_fn,
+        fmt_stat_fn=fmt_stat_fn,
     )
     return (
         '<div class="pa-layout">'
         f'<div class="pa-col pa-col-identity">{identity_card}</div>'
         '<div class="pa-col pa-col-score">'
+        '<div class="pa-score-stack">'
         f"{rating_panel}"
         f"{radar_card}"
         "</div>"
-        f'<div class="pa-col pa-col-pillars"><div class="pa-pillars-stack">{pillar_html}</div></div>'
+        "</div>"
+        '<div class="pa-col pa-col-pillars">'
+        f'<div class="player-card pa-pillars-card"><div class="pa-pillars-stack">{pillar_html}</div></div>'
+        "</div>"
         "</div>"
     )
 
