@@ -1263,6 +1263,7 @@ st.markdown(
         flex-direction: column;
         gap: 0.65rem;
         height: 100%;
+        flex: 1;
     }
     .pa-identity-top {
         display: flex;
@@ -1340,40 +1341,69 @@ st.markdown(
         white-space: nowrap;
     }
     .pa-rating-panel {
-        padding: 0.85rem 1rem 0.8rem;
-        text-align: center;
+        padding: 0.8rem 0.9rem;
         margin-bottom: 0;
         flex-shrink: 0;
     }
-    .pa-rating-panel-label {
+    .pa-rating-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) 1px minmax(0, 1fr) 1px minmax(0, 1fr);
+        align-items: center;
+        gap: 0.7rem;
+    }
+    .pa-rating-divider {
+        width: 1px;
+        align-self: stretch;
+        background: #243049;
+        min-height: 3.25rem;
+    }
+    .pa-rating-block {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 0.32rem;
+        min-width: 0;
+    }
+    .pa-rating-block-label {
         color: #8fa3bf;
-        font-size: 0.68rem;
+        font-size: 0.65rem;
         font-weight: 700;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        margin-bottom: 0.45rem;
     }
-    .pa-rating-panel .rating-box-wrap {
+    .pa-rating-block-score {
+        display: flex;
         justify-content: center;
-        width: 100%;
+        align-items: center;
     }
-    .pa-rating-panel .rating-box {
-        min-width: 4.5rem;
-        font-size: 1.65rem !important;
-        padding: 0.45rem 0.85rem !important;
-    }
-    .pa-rating-panel .sub-rating-row {
+    .pa-rating-block-score .rating-box-wrap {
         justify-content: center;
-        margin-top: 0.55rem;
-        gap: 0.45rem;
     }
-    .pa-rating-panel .rating-meta {
+    .pa-rating-block-score .rating-box {
+        min-width: 3.35rem;
+        font-size: 1.35rem !important;
+        padding: 0.38rem 0.7rem !important;
+    }
+    .pa-rating-block-overall .rating-box {
+        min-width: 3.85rem;
+        font-size: 1.55rem !important;
+        padding: 0.42rem 0.78rem !important;
+    }
+    .pa-rating-badges {
+        display: flex;
         justify-content: center;
-        margin-top: 0.45rem;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        margin-top: 0.1rem;
+    }
+    .pa-rating-badges .rating-badge-row {
+        justify-content: center;
     }
     .pa-col-score .radar-card {
         margin-bottom: 0;
-        padding: 0.75rem 0.85rem 0.85rem;
+        padding: 0.7rem 0.75rem 0.8rem;
         flex: 1;
         display: flex;
         flex-direction: column;
@@ -1381,22 +1411,26 @@ st.markdown(
     }
     .pa-col-score .radar-card-body {
         flex: 1;
-        min-height: 0;
-        max-height: 220px;
+        min-height: 160px;
+        display: flex;
         align-items: center;
         justify-content: center;
+        width: 100%;
     }
     .pa-col-score .rating-radar-wrap {
         width: 100%;
-        height: auto;
-        max-height: 200px;
-        max-width: 200px;
-        margin: 0 auto;
+        height: 100%;
+        max-width: none;
+        max-height: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     .pa-col-score .rating-radar {
         width: 100%;
-        height: auto;
-        max-height: 200px;
+        height: 100%;
+        max-width: 100%;
+        max-height: 100%;
         object-fit: contain;
     }
     .pa-pillars-stack {
@@ -2227,6 +2261,87 @@ def _progression_rating_slot_html(player: dict, metric_ranks: dict) -> str:
     return slot + sub_row
 
 
+def _rating_display_box_html(
+    player: dict,
+    metric_ranks: dict,
+    *,
+    rating_key: str = "pass_rating",
+) -> str:
+    rating_val = player.get(rating_key)
+    rating_info = metric_ranks.get(rating_key)
+    low_sample = _is_low_sample_rating(player, rating_key=rating_key)
+    low_cls = " rating-box-low-sample" if low_sample and rating_val is not None else ""
+    score_inner = _rating_score_value_html(player, rating_key=rating_key)
+    sample_warning = _rating_sample_warning_html(player)
+
+    if rating_info and rating_val is not None:
+        r_color = rating_value_color(rating_val)
+        r_txt = _badge_text_color(r_color)
+        rank_txt = f'{int(rating_info["rank"])}/{int(rating_info["total"])}'
+        return (
+            f'<span class="rating-box-wrap">'
+            f'<span class="rating-tip">'
+            f'<div class="rating-box{low_cls}" style="background:{r_color};color:{r_txt};margin-bottom:0">'
+            f"{score_inner}</div>"
+            f'<span class="rating-rank-tipbox">{html.escape(rank_txt)}</span>'
+            f"</span>"
+            f"{sample_warning}"
+            f"</span>"
+        )
+    return (
+        f'<span class="rating-box-wrap">'
+        f'<div class="rating-box{low_cls}" style="background:#334155;color:#f8fafc;margin-bottom:0">'
+        f"{score_inner}</div>"
+        f"{sample_warning}"
+        f"</span>"
+    )
+
+
+def _player_analysis_rating_block_html(
+    player: dict,
+    metric_ranks: dict,
+    *,
+    rating_key: str,
+    label: str,
+    show_badges: bool = False,
+) -> str:
+    badges = _rating_badges_html(player) if show_badges else ""
+    badges_html = (
+        f'<div class="pa-rating-badges">{badges}</div>' if badges else ""
+    )
+    block_cls = " pa-rating-block-overall" if show_badges else ""
+    return (
+        f'<div class="pa-rating-block{block_cls}">'
+        f'<div class="pa-rating-block-label">{html.escape(label)}</div>'
+        f'<div class="pa-rating-block-score">'
+        f'{_rating_display_box_html(player, metric_ranks, rating_key=rating_key)}'
+        "</div>"
+        f"{badges_html}"
+        "</div>"
+    )
+
+
+def _player_analysis_rating_panel_html(player: dict, metric_ranks: dict) -> str:
+    blocks = [
+        _player_analysis_rating_block_html(
+            player, metric_ranks, rating_key="progression_rating", label="Overall", show_badges=True,
+        ),
+        '<div class="pa-rating-divider"></div>',
+        _player_analysis_rating_block_html(
+            player, metric_ranks, rating_key="pass_rating", label="Pass",
+        ),
+        '<div class="pa-rating-divider"></div>',
+        _player_analysis_rating_block_html(
+            player, metric_ranks, rating_key="carry_rating", label="Carry",
+        ),
+    ]
+    return (
+        '<div class="player-card pa-rating-panel">'
+        f'<div class="pa-rating-row">{"".join(blocks)}</div>'
+        "</div>"
+    )
+
+
 def _section_grade_summary_bits(
     player: dict,
     section_key: str,
@@ -2515,27 +2630,17 @@ def _build_player_analysis_layout_html(
     confidence_minutes: float = RATING_CONFIDENCE_MINUTES,
     confidence_passes: float = RATING_CONFIDENCE_PASSES,
     rating_key: str = "progression_rating",
-    rating_slot_fn=_progression_rating_slot_html,
+    rating_slot_fn=None,
 ) -> str:
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
-    rating_slot = (
-        rating_slot_fn(player, metric_ranks)
-        if rating_slot_fn is not None
-        else _player_rating_slot_html(player, metric_ranks, rating_key=rating_key)
-    )
-    rating_panel = (
-        '<div class="player-card pa-rating-panel">'
-        '<div class="pa-rating-panel-label">Overall rating</div>'
-        f"{rating_slot}"
-        "</div>"
-    )
+    rating_panel = _player_analysis_rating_panel_html(player, metric_ranks)
     radar_card = _pillar_radar_card_html(
         player,
         scout_section_specs=scout_section_specs,
         pillar_labels=pillar_labels or _PROGRESSION_PILLAR_RADAR_LABELS,
         confidence_minutes=confidence_minutes,
         confidence_passes=confidence_passes,
-        radar_figsize=(3.4, 3.4),
+        radar_figsize=(4.2, 4.2),
     )
     identity_card = _build_player_analysis_identity_card_html(
         player,
