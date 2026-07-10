@@ -299,6 +299,7 @@ def _pillar_radar_b64(
     pillar_labels: dict[str, str] | None = None,
     confidence_minutes: float = RATING_CONFIDENCE_MINUTES,
     confidence_passes: float = RATING_CONFIDENCE_PASSES,
+    radar_figsize: tuple[float, float] = (3.4, 3.4),
 ) -> str:
     import base64
     import io
@@ -335,7 +336,7 @@ def _pillar_radar_b64(
     fill_alpha = 0.12 if low_sample else 0.22
 
     fig, ax = plt.subplots(
-        figsize=(3.4, 3.4),
+        figsize=radar_figsize,
         subplot_kw={"polar": True},
         facecolor="none",
     )
@@ -1217,9 +1218,9 @@ st.markdown(
     .pa-toggles { margin: 0.15rem 0 0.75rem 0; }
     .pa-layout {
         display: grid;
-        grid-template-columns: minmax(250px, 1fr) minmax(250px, 290px) minmax(300px, 1.2fr);
+        grid-template-columns: minmax(220px, 0.92fr) minmax(320px, 1.35fr) minmax(210px, 0.78fr);
         gap: 0.75rem;
-        align-items: start;
+        align-items: stretch;
     }
     @media (max-width: 1100px) {
         .pa-layout { grid-template-columns: 1fr; }
@@ -1231,8 +1232,15 @@ st.markdown(
         min-width: 0;
     }
     .pa-col-score {
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
         position: sticky;
         top: 0.75rem;
+        align-self: start;
+    }
+    .pa-col-pillars {
+        min-width: 0;
     }
     .pa-identity-card {
         padding: 1rem 1.05rem 0.95rem;
@@ -1291,26 +1299,31 @@ st.markdown(
         letter-spacing: 0.06em;
         text-transform: uppercase;
     }
-    .pa-participation-stack {
+    .pa-participation-compact {
         display: flex;
         flex-direction: column;
-        gap: 0.42rem;
+        gap: 0;
     }
-    .pa-participation-stack .metric-line {
+    .pa-part-row {
         display: flex;
         justify-content: space-between;
-        align-items: center;
-        gap: 0.65rem;
-        background: rgba(15, 23, 42, 0.45);
-        border: 1px solid #243049;
-        border-radius: 8px;
-        padding: 0.45rem 0.58rem;
-        margin: 0;
+        align-items: baseline;
+        gap: 0.75rem;
+        padding: 0.4rem 0;
+        border-bottom: 1px solid #243049;
     }
-    .pa-participation-stack .stat-val {
-        font-size: 0.95rem;
-        font-weight: 800;
+    .pa-part-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .pa-part-label {
+        color: #94a3b8;
+        font-size: 0.82rem;
+        min-width: 0;
+    }
+    .pa-part-val {
         color: #f8fafc;
+        font-size: 0.9rem;
+        font-weight: 700;
+        text-align: right;
+        white-space: nowrap;
     }
     .pa-rating-panel {
         padding: 0.95rem 1rem 0.9rem;
@@ -1345,20 +1358,43 @@ st.markdown(
     }
     .pa-col-score .radar-card {
         margin-bottom: 0;
-        padding: 0.85rem 0.95rem 0.95rem;
+        padding: 0.85rem 0.95rem 1rem;
         flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
     }
-    .pa-col-score .radar-card-body { min-height: 200px; }
+    .pa-col-score .radar-card-body {
+        flex: 1;
+        min-height: 300px;
+        align-items: stretch;
+    }
     .pa-col-score .rating-radar-wrap {
-        max-width: 100%;
-        height: 220px;
+        width: 100%;
+        height: 100%;
+        min-height: 300px;
+        max-width: none;
     }
     .pa-pillars-stack {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: 0.42rem;
+        height: 100%;
     }
-    .pa-pillars-stack .grade-accordion { margin-bottom: 0; }
+    .pa-pillars-stack .grade-accordion {
+        margin-bottom: 0;
+    }
+    .pa-pillars-stack .grade-accordion summary {
+        padding: 0.55rem 0.65rem;
+    }
+    .pa-pillars-stack .grade-card-title {
+        font-size: 0.82rem;
+    }
+    .pa-pillars-stack .section-rating-pill {
+        font-size: 0.76rem;
+        min-width: 44px;
+        padding: 3px 8px;
+    }
     .pa-panel {
         background: linear-gradient(160deg, #151b2b 0%, #101522 100%);
         border: 1px solid #2a3550;
@@ -2318,6 +2354,27 @@ def render_dashboard_sidebar(player: dict, **kwargs) -> None:
     st.html(_build_dashboard_sidebar_html(player, **kwargs), width="stretch")
 
 
+def _participation_row_html(
+    label: str,
+    key: str,
+    value: str,
+    *,
+    label_fn,
+    tooltip_fn,
+) -> str:
+    label_html = (
+        _metric_label_html(key, label_fn=label_fn, tooltip_fn=tooltip_fn)
+        if key
+        else html.escape(label)
+    )
+    return (
+        '<div class="pa-part-row">'
+        f'<span class="pa-part-label">{label_html}</span>'
+        f'<span class="pa-part-val">{html.escape(value)}</span>'
+        "</div>"
+    )
+
+
 def _build_player_analysis_identity_card_html(
     player: dict,
     participation_keys: tuple[str, ...],
@@ -2334,18 +2391,13 @@ def _build_player_analysis_identity_card_html(
     badges_block = (
         f'<div class="pa-identity-badges">{badges}</div>' if badges else ""
     )
-    metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
     participation_lines = "".join(
-        _metric_line_html(
+        _participation_row_html(
             label_fn(key),
             key,
             _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
-            metric_ranks,
-            player=player,
-            show_rank=True,
             label_fn=label_fn,
             tooltip_fn=tooltip_fn,
-            rank_in_group_fn=rank_in_group_fn,
         )
         for key in participation_keys
     )
@@ -2361,7 +2413,7 @@ def _build_player_analysis_identity_card_html(
         "</div>"
         '<div class="pa-identity-divider"></div>'
         '<p class="pa-section-label">Participation</p>'
-        f'<div class="pa-participation-stack">{participation_lines}</div>'
+        f'<div class="pa-participation-compact">{participation_lines}</div>'
         "</div>"
     )
 
@@ -2400,6 +2452,7 @@ def _build_player_analysis_layout_html(
         pillar_labels=pillar_labels or _PROGRESSION_PILLAR_RADAR_LABELS,
         confidence_minutes=confidence_minutes,
         confidence_passes=confidence_passes,
+        radar_figsize=(4.5, 4.5),
     )
     identity_card = _build_player_analysis_identity_card_html(
         player,
@@ -2888,14 +2941,16 @@ def _sync_player_analysis_selection(
     players_by_id: dict[str, dict],
     label_by_id: dict[str, str],
 ) -> None:
-    _sync_player_selection(
-        players_by_id,
-        label_by_id,
-        selectbox_key=PLAYER_ANALYSIS_SELECT_KEY,
-    )
-    map_id = st.session_state.get("map_player_id")
-    if map_id and map_id in label_by_id:
-        st.session_state[PLAYER_ANALYSIS_SELECT_KEY] = label_by_id[map_id]
+    """Sync slicer from Ranking URL picks only — never override a manual selection."""
+    qp = st.query_params.get("player_id")
+    qp_id = str(qp) if qp else None
+    if qp_id and qp_id in players_by_id:
+        if st.session_state.get("_pa_url_player_id") != qp_id:
+            st.session_state["_pa_url_player_id"] = qp_id
+            st.session_state["map_player_id"] = qp_id
+            st.session_state[PLAYER_ANALYSIS_SELECT_KEY] = label_by_id[qp_id]
+    elif qp_id is None:
+        st.session_state.pop("_pa_url_player_id", None)
 
 
 def _prepare_sb_to_sa_similarity_context(
@@ -3047,10 +3102,18 @@ def render_player_analysis_section(
         return
 
     player_id = id_by_label[selected_label]
+    prev_id = st.session_state.get("map_player_id")
     st.session_state["map_player_id"] = player_id
-    if st.session_state.get("pa_last_player_id") != player_id:
+    if prev_id != player_id:
         st.session_state["pa_last_player_id"] = player_id
         st.session_state.pop(PLAYER_ANALYSIS_SIMILAR_PICK_KEY, None)
+        url_pick = st.query_params.get("player_id")
+        if url_pick and str(url_pick) != str(player_id):
+            try:
+                del st.query_params["player_id"]
+            except Exception:
+                pass
+            st.session_state.pop("_pa_url_player_id", None)
 
     player = _resolve_progression_analysis_player(
         player_id,
