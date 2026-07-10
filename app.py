@@ -50,6 +50,8 @@ from passes_maps import (
     draw_pass_destination_heatmap,
     draw_pass_origin_heatmap,
 )
+import carries_engine as ce
+from carries_maps import draw_all_carries_map, draw_dribble_map, draw_impact_pass_map as draw_carry_impact_map
 
 DATA_CACHE_VERSION = pe.DATA_CACHE_VERSION
 LONG_BALL_STAT_KEYS = pe.LONG_BALL_STAT_KEYS
@@ -85,6 +87,30 @@ enrich_player_eligibility = pe.enrich_player_eligibility
 RATING_CONFIDENCE_MINUTES = getattr(pe, "RATING_CONFIDENCE_MINUTES", 900.0)
 RATING_CONFIDENCE_PASSES = getattr(pe, "RATING_CONFIDENCE_PASSES", 400.0)
 
+CARRIES_DATA_CACHE_VERSION = ce.DATA_CACHE_VERSION
+CARRIES_SCOUT_SECTION_SPECS = ce.SCOUT_SECTION_SPECS
+ce_build_analytics = ce.build_analytics
+ce_compute_pass_ratings = ce.compute_pass_ratings
+ce_load_carries_grouped = ce.load_passes_grouped
+ce_load_dribbles_grouped = ce.load_dribbles_grouped
+ce_rate_player_vs_eligible_pool = ce.rate_player_vs_eligible_pool
+ce_analyst_metric_label = ce.analyst_metric_label
+ce_metric_tooltip = ce.metric_tooltip
+ce_rank_in_group_label = ce.rank_in_group_label
+ce_fmt_pct = ce.fmt_pct
+ce_fmt_stat_value = ce.fmt_stat_value
+CARRIES_RATING_CONFIDENCE_MINUTES = getattr(ce, "RATING_CONFIDENCE_MINUTES", 900.0)
+CARRIES_RATING_CONFIDENCE_PASSES = getattr(ce, "RATING_CONFIDENCE_PASSES", 400.0)
+CARRIES_PARTICIPATION_KEYS: tuple[str, ...] = (
+    "minutes",
+    "carries_total",
+    "minutes_pct",
+    "impact_passes",
+    "high_impact_passes",
+    "dribbles_total",
+    "dribble_success_pct",
+)
+
 
 
 def fmt_rating_score(pass_rating) -> str:
@@ -92,18 +118,32 @@ def fmt_rating_score(pass_rating) -> str:
         return "—"
     return f"{float(pass_rating) * 10.0:.1f}"
 
-def _rating_confidence_value(player: dict) -> float:
+def _rating_confidence_value(
+    player: dict,
+    *,
+    confidence_minutes: float = RATING_CONFIDENCE_MINUTES,
+    confidence_passes: float = RATING_CONFIDENCE_PASSES,
+) -> float:
     conf = player.get("rating_confidence")
     if conf is not None:
         return float(conf)
     minutes = float(player.get("minutes") or 0)
     passes = float(player.get("passes_completed") or 0)
-    pass_ref = max(float(player.get("position_p25_passes") or RATING_CONFIDENCE_PASSES), 1.0)
-    return min(1.0, minutes / RATING_CONFIDENCE_MINUTES) * min(1.0, passes / pass_ref)
+    pass_ref = max(float(player.get("position_p25_passes") or confidence_passes), 1.0)
+    return min(1.0, minutes / confidence_minutes) * min(1.0, passes / pass_ref)
 
 
-def _is_low_sample_rating(player: dict) -> bool:
-    return _rating_confidence_value(player) < 0.999
+def _is_low_sample_rating(
+    player: dict,
+    *,
+    confidence_minutes: float = RATING_CONFIDENCE_MINUTES,
+    confidence_passes: float = RATING_CONFIDENCE_PASSES,
+) -> bool:
+    return _rating_confidence_value(
+        player,
+        confidence_minutes=confidence_minutes,
+        confidence_passes=confidence_passes,
+    ) < 0.999
 
 
 def _low_sample_tooltip(player: dict) -> str:
@@ -174,9 +214,21 @@ _PILLAR_RADAR_LABELS: dict[str, str] = {
     "construction": "Cst",
     "aggression": "Atq",
 }
+_CARRIES_PILLAR_RADAR_LABELS: dict[str, str] = {
+    "metrics_absolute": "Vol",
+    "metrics_relative": "Eff",
+    "general_carries_dribbles": "FT",
+}
 
 
-def _pillar_radar_b64(player: dict) -> str:
+def _pillar_radar_b64(
+    player: dict,
+    *,
+    scout_section_specs=SCOUT_SECTION_SPECS,
+    pillar_labels: dict[str, str] | None = None,
+    confidence_minutes: float = RATING_CONFIDENCE_MINUTES,
+    confidence_passes: float = RATING_CONFIDENCE_PASSES,
+) -> str:
     import base64
     import io
 
@@ -186,14 +238,15 @@ def _pillar_radar_b64(player: dict) -> str:
 
     matplotlib.use("Agg")
 
+    label_map = pillar_labels or _PILLAR_RADAR_LABELS
     section_ratings = player.get("section_ratings") if isinstance(player.get("section_ratings"), dict) else {}
     labels: list[str] = []
     values: list[float] = []
-    for section_key, _, _, _ in SCOUT_SECTION_SPECS:
+    for section_key, _, _, _ in scout_section_specs:
         score = section_ratings.get(section_key)
         if score is None:
             continue
-        labels.append(_PILLAR_RADAR_LABELS.get(section_key, section_key[:6]))
+        labels.append(label_map.get(section_key, section_key[:6]))
         values.append(float(score) * 10.0)
     if len(values) < 3:
         return ""
@@ -202,7 +255,11 @@ def _pillar_radar_b64(player: dict) -> str:
     angles = np.linspace(0, 2 * np.pi, count, endpoint=False)
     values_closed = values + [values[0]]
     angles_closed = np.append(angles, angles[0])
-    low_sample = _is_low_sample_rating(player)
+    low_sample = _is_low_sample_rating(
+        player,
+        confidence_minutes=confidence_minutes,
+        confidence_passes=confidence_passes,
+    )
     line_alpha = 0.55 if low_sample else 0.95
     fill_alpha = 0.12 if low_sample else 0.22
 
@@ -234,19 +291,20 @@ def _pillar_radar_b64(player: dict) -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-def _pillar_radar_inner_html(player: dict) -> str:
-    b64 = _pillar_radar_b64(player)
+def _pillar_radar_inner_html(player: dict, **kwargs) -> str:
+    b64 = _pillar_radar_b64(player, **kwargs)
     if not b64:
         return ""
+    pillar_count = len(kwargs.get("scout_section_specs", SCOUT_SECTION_SPECS))
     return (
-        '<span class="rating-radar-wrap" title="5 pillar scores">'
+        f'<span class="rating-radar-wrap" title="{pillar_count} pillar scores">'
         f'<img class="rating-radar" src="data:image/png;base64,{b64}" alt="Pillar radar">'
         "</span>"
     )
 
 
-def _pillar_radar_card_html(player: dict) -> str:
-    inner = _pillar_radar_inner_html(player)
+def _pillar_radar_card_html(player: dict, **kwargs) -> str:
+    inner = _pillar_radar_inner_html(player, **kwargs)
     if not inner:
         return ""
     return (
@@ -1075,6 +1133,7 @@ st.title(f"{APP_NAME} · {APP_LEAGUE}")
 
 RATING_COLUMNS = ["Player", "Team", "Rating"]
 SELECTBOX_KEY = "map_player_select"
+CARRIES_SELECTBOX_KEY = "carries_map_player_select"
 
 
 def _call_build_analytics(
@@ -1175,6 +1234,21 @@ def load_serie_a_players(_cache_version: int = DATA_CACHE_VERSION):
     )
 
 
+@st.cache_data(show_spinner=False)
+def load_carries_analytics(_cache_version: int = CARRIES_DATA_CACHE_VERSION):
+    return ce_build_analytics(_cache_version)
+
+
+@st.cache_data(show_spinner=False)
+def load_carries_grouped(_cache_version: int = CARRIES_DATA_CACHE_VERSION):
+    return ce_load_carries_grouped(_cache_version)
+
+
+@st.cache_data(show_spinner=False)
+def load_dribbles_grouped(_cache_version: int = CARRIES_DATA_CACHE_VERSION):
+    return ce_load_dribbles_grouped(_cache_version)
+
+
 def _norm(s: str) -> str:
     return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().lower()
 
@@ -1204,11 +1278,14 @@ def _player_options(rated: list[dict]) -> list[tuple[str, str, str, str]]:
 def _sync_player_selection(
     players_by_id: dict[str, dict],
     label_by_id: dict[str, str],
+    *,
+    map_id_key: str = "map_player_id",
+    selectbox_key: str = SELECTBOX_KEY,
 ) -> None:
     qp = st.query_params.get("player_id")
     if qp and qp in players_by_id:
-        st.session_state["map_player_id"] = qp
-        st.session_state[SELECTBOX_KEY] = label_by_id[qp]
+        st.session_state[map_id_key] = qp
+        st.session_state[selectbox_key] = label_by_id[qp]
 
 
 def _rating_table_rows_html(rows: list[dict], *, selected_player_id: str | None) -> str:
@@ -1457,11 +1534,17 @@ def _rating_warnings_html(player: dict) -> str:
     )
 
 
-def _stat_display(player: dict, key: str) -> str:
+def _stat_display(
+    player: dict,
+    key: str,
+    *,
+    fmt_pct_fn=fmt_pct,
+    fmt_stat_fn=fmt_stat_value,
+) -> str:
     if key == "minutes_pct":
         pct = player.get("minutes_pct")
-        return fmt_pct(pct * 100.0) if pct is not None else "—"
-    return fmt_stat_value(key, player.get(key))
+        return fmt_pct_fn(pct * 100.0) if pct is not None else "—"
+    return fmt_stat_fn(key, player.get(key))
 
 
 def _badge_text_color(hex_color: str) -> str:
@@ -1472,22 +1555,33 @@ def _badge_text_color(hex_color: str) -> str:
     return "#1e293b" if lum > 168 else "#f8fafc"
 
 
-def _metric_label_html(key: str) -> str:
-    label = analyst_metric_label(key)
-    tip = html.escape(metric_tooltip(key))
+def _metric_label_html(
+    key: str,
+    *,
+    label_fn=analyst_metric_label,
+    tooltip_fn=metric_tooltip,
+) -> str:
+    label = label_fn(key)
+    tip = html.escape(tooltip_fn(key))
     return (
         f'<span class="metric-tip">{html.escape(label)}'
         f'<span class="metric-tipbox">{tip}</span></span>'
     )
 
 
-def _metric_rank_subtitle_html(player: dict, key: str, metric_ranks: dict) -> str:
+def _metric_rank_subtitle_html(
+    player: dict,
+    key: str,
+    metric_ranks: dict,
+    *,
+    rank_in_group_fn=rank_in_group_label,
+) -> str:
     info = metric_ranks.get(key)
     if not info:
         return ""
     return (
         f'<span class="metric-rank-sub">'
-        f'{html.escape(rank_in_group_label(int(info["rank"]), player.get("position_group")))}'
+        f'{html.escape(rank_in_group_fn(int(info["rank"]), player.get("position_group")))}'
         f"</span>"
     )
 
@@ -1500,6 +1594,9 @@ def _metric_line_html(
     *,
     player: dict | None = None,
     show_rank: bool = True,
+    label_fn=analyst_metric_label,
+    tooltip_fn=metric_tooltip,
+    rank_in_group_fn=rank_in_group_label,
 ) -> str:
     badge = ""
     if show_rank:
@@ -1514,14 +1611,20 @@ def _metric_line_html(
                 f'<span class="rank-tipbox">{rank}/{total}</span>'
                 f"</span>"
             )
-    rank_sub = _metric_rank_subtitle_html(player or {}, key, metric_ranks) if show_rank and player else ""
+    rank_sub = (
+        _metric_rank_subtitle_html(
+            player or {}, key, metric_ranks, rank_in_group_fn=rank_in_group_fn,
+        )
+        if show_rank and player
+        else ""
+    )
     value_inner = (
         f'<span class="val-wrap">{badge}<span class="stat-val">{html.escape(value)}</span></span>'
         f"{rank_sub}"
         if badge
         else f'<span class="stat-val">{html.escape(value)}</span>{rank_sub}'
     )
-    label_html = _metric_label_html(key) if key else html.escape(label)
+    label_html = _metric_label_html(key, label_fn=label_fn, tooltip_fn=tooltip_fn) if key else html.escape(label)
     return (
         '<div class="metric-line">'
         f"<span>{label_html}</span>"
@@ -1563,6 +1666,12 @@ def _build_sections_html(
     player: dict,
     metric_ranks: dict,
     sections: list[tuple[str, str | None, tuple[str, ...], bool]],
+    *,
+    label_fn=analyst_metric_label,
+    tooltip_fn=metric_tooltip,
+    rank_in_group_fn=rank_in_group_label,
+    fmt_pct_fn=fmt_pct,
+    fmt_stat_fn=fmt_stat_value,
 ) -> str:
     parts: list[str] = []
     for title, section_key, keys, show_rank in sections:
@@ -1575,12 +1684,15 @@ def _build_sections_html(
         for key in keys:
             parts.append(
                 _metric_line_html(
-                    analyst_metric_label(key),
+                    label_fn(key),
                     key,
-                    _stat_display(player, key),
+                    _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
                     metric_ranks,
                     player=player,
                     show_rank=show_rank,
+                    label_fn=label_fn,
+                    tooltip_fn=tooltip_fn,
+                    rank_in_group_fn=rank_in_group_fn,
                 )
             )
     return "".join(parts)
@@ -1626,6 +1738,8 @@ def _section_grade_summary_bits(
     player: dict,
     section_key: str,
     title: str,
+    *,
+    rank_in_group_fn=rank_in_group_label,
 ) -> str:
     section_ratings = player.get("section_ratings") if isinstance(player.get("section_ratings"), dict) else {}
     section_rank_info = player.get("section_rating_ranks") if isinstance(player.get("section_rating_ranks"), dict) else {}
@@ -1644,7 +1758,7 @@ def _section_grade_summary_bits(
             )
             rank_html = (
                 f'<div class="grade-card-rank">'
-                f'{html.escape(rank_in_group_label(int(rank_info["rank"]), player.get("position_group")))}'
+                f'{html.escape(rank_in_group_fn(int(rank_info["rank"]), player.get("position_group")))}'
                 f"</div>"
             )
         else:
@@ -1666,9 +1780,24 @@ def _section_grade_accordion_html(
     keys: tuple[str, ...],
     *,
     open: bool = False,
+    label_fn=analyst_metric_label,
+    tooltip_fn=metric_tooltip,
+    rank_in_group_fn=rank_in_group_label,
+    fmt_pct_fn=fmt_pct,
+    fmt_stat_fn=fmt_stat_value,
 ) -> str:
-    summary_main = _section_grade_summary_bits(player, section_key, title)
-    lines = _section_grade_body_html(player, keys)
+    summary_main = _section_grade_summary_bits(
+        player, section_key, title, rank_in_group_fn=rank_in_group_fn,
+    )
+    lines = _section_grade_body_html(
+        player,
+        keys,
+        label_fn=label_fn,
+        tooltip_fn=tooltip_fn,
+        rank_in_group_fn=rank_in_group_fn,
+        fmt_pct_fn=fmt_pct_fn,
+        fmt_stat_fn=fmt_stat_fn,
+    )
     open_attr = " open" if open else ""
     return (
         f'<details class="grade-accordion"{open_attr}>'
@@ -1681,20 +1810,28 @@ def _section_grade_accordion_html(
     )
 
 
-def _build_dashboard_sidebar_html(player: dict) -> str:
+def _build_dashboard_sidebar_html(
+    player: dict,
+    *,
+    scout_section_specs=SCOUT_SECTION_SPECS,
+    pillar_labels: dict[str, str] | None = None,
+    participation_keys: tuple[str, ...] = (
+        "minutes",
+        "passes_completed",
+        "minutes_pct",
+        "impact_passes",
+        "high_impact_passes",
+    ),
+    label_fn=analyst_metric_label,
+    tooltip_fn=metric_tooltip,
+    rank_in_group_fn=rank_in_group_label,
+    fmt_pct_fn=fmt_pct,
+    fmt_stat_fn=fmt_stat_value,
+    confidence_minutes: float = RATING_CONFIDENCE_MINUTES,
+    confidence_passes: float = RATING_CONFIDENCE_PASSES,
+) -> str:
     general_sections: list[tuple[str, str | None, tuple[str, ...], bool]] = [
-        (
-            "Participation",
-            None,
-            (
-                "minutes",
-                "passes_completed",
-                "minutes_pct",
-                "impact_passes",
-                "high_impact_passes",
-            ),
-            False,
-        ),
+        ("Participation", None, participation_keys, False),
     ]
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
     sub_line = (
@@ -1709,13 +1846,39 @@ def _build_dashboard_sidebar_html(player: dict) -> str:
         f'<div class="player-sub-line">{sub_line}</div>'
         f"{_player_rating_slot_html(player, metric_ranks)}"
         "</div>"
-        + _build_sections_html(player, metric_ranks, general_sections)
+        + _build_sections_html(
+            player,
+            metric_ranks,
+            general_sections,
+            label_fn=label_fn,
+            tooltip_fn=tooltip_fn,
+            rank_in_group_fn=rank_in_group_fn,
+            fmt_pct_fn=fmt_pct_fn,
+            fmt_stat_fn=fmt_stat_fn,
+        )
         + "</div>"
     )
-    radar_card = _pillar_radar_card_html(player)
+    radar_kwargs = {
+        "scout_section_specs": scout_section_specs,
+        "pillar_labels": pillar_labels,
+        "confidence_minutes": confidence_minutes,
+        "confidence_passes": confidence_passes,
+    }
+    radar_card = _pillar_radar_card_html(player, **radar_kwargs)
     pillar_html = "".join(
-        _section_grade_accordion_html(player, section_key, title, keys, open=False)
-        for section_key, title, _subtitle, keys in SCOUT_SECTION_SPECS
+        _section_grade_accordion_html(
+            player,
+            section_key,
+            title,
+            keys,
+            open=False,
+            label_fn=label_fn,
+            tooltip_fn=tooltip_fn,
+            rank_in_group_fn=rank_in_group_fn,
+            fmt_pct_fn=fmt_pct_fn,
+            fmt_stat_fn=fmt_stat_fn,
+        )
+        for section_key, title, _subtitle, keys in scout_section_specs
     )
     return (
         '<div class="sidebar-stack dashboard-sidebar-stack">'
@@ -1726,20 +1889,32 @@ def _build_dashboard_sidebar_html(player: dict) -> str:
     )
 
 
-def render_dashboard_sidebar(player: dict) -> None:
-    st.html(_build_dashboard_sidebar_html(player), width="stretch")
+def render_dashboard_sidebar(player: dict, **kwargs) -> None:
+    st.html(_build_dashboard_sidebar_html(player, **kwargs), width="stretch")
 
 
-def _section_grade_body_html(player: dict, keys: tuple[str, ...]) -> str:
+def _section_grade_body_html(
+    player: dict,
+    keys: tuple[str, ...],
+    *,
+    label_fn=analyst_metric_label,
+    tooltip_fn=metric_tooltip,
+    rank_in_group_fn=rank_in_group_label,
+    fmt_pct_fn=fmt_pct,
+    fmt_stat_fn=fmt_stat_value,
+) -> str:
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
     return "".join(
         _metric_line_html(
-            analyst_metric_label(key),
+            label_fn(key),
             key,
-            _stat_display(player, key),
+            _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
             metric_ranks,
             player=player,
             show_rank=True,
+            label_fn=label_fn,
+            tooltip_fn=tooltip_fn,
+            rank_in_group_fn=rank_in_group_fn,
         )
         for key in keys
     )
@@ -1843,6 +2018,102 @@ def render_map_section(
     passes = passes_by_player.get(player_id)
 
     render_player_layout(player, passes)
+
+
+def render_carries_player_layout(player: dict, carries, dribbles) -> None:
+    team_label = player.get("team", "—")
+    player_name = player["player_name"]
+    col_maps, col_side = st.columns([1.68, 0.72], gap="small")
+
+    with col_maps:
+        r1c1, r1c2, r1c3 = st.columns(3, gap="small")
+        with r1c1:
+            if carries is None or carries.empty:
+                st.warning("No carries for this player.")
+            else:
+                fig_all = draw_all_carries_map(
+                    carries, player_name, team_label, compact=False,
+                )
+                st.pyplot(fig_all, clear_figure=True, use_container_width=True)
+        with r1c2:
+            if carries is None or carries.empty:
+                st.warning("No threat carries for this player.")
+            else:
+                fig_impact = draw_carry_impact_map(
+                    carries, player_name, team_label, compact=False,
+                )
+                st.pyplot(fig_impact, clear_figure=True, use_container_width=True)
+        with r1c3:
+            if dribbles is None or dribbles.empty:
+                st.info("No dribbles with coordinates for this player.")
+            else:
+                fig_drib = draw_dribble_map(
+                    dribbles, player_name, team_label, compact=False,
+                )
+                st.pyplot(fig_drib, clear_figure=True, use_container_width=True)
+
+    with col_side:
+        render_dashboard_sidebar(
+            player,
+            scout_section_specs=CARRIES_SCOUT_SECTION_SPECS,
+            pillar_labels=_CARRIES_PILLAR_RADAR_LABELS,
+            participation_keys=CARRIES_PARTICIPATION_KEYS,
+            label_fn=ce_analyst_metric_label,
+            tooltip_fn=ce_metric_tooltip,
+            rank_in_group_fn=ce_rank_in_group_label,
+            fmt_pct_fn=ce_fmt_pct,
+            fmt_stat_fn=ce_fmt_stat_value,
+            confidence_minutes=CARRIES_RATING_CONFIDENCE_MINUTES,
+            confidence_passes=CARRIES_RATING_CONFIDENCE_PASSES,
+        )
+
+
+def render_carries_map_section(
+    all_players: list[dict],
+    players_by_id: dict[str, dict],
+    pool_by_position: dict[str, list[dict]],
+    carries_by_player: dict,
+    dribbles_by_player: dict,
+) -> None:
+    st.caption("Select below or click a player in the Ranking tab.")
+
+    options = _player_options(all_players)
+    if not options:
+        st.info("No players with carries for the map.")
+        return
+
+    labels = [o[3] for o in options]
+    id_by_label = {o[3]: o[0] for o in options}
+    label_by_id = {o[0]: o[3] for o in options}
+
+    _sync_player_selection(
+        players_by_id,
+        label_by_id,
+        map_id_key="carries_map_player_id",
+        selectbox_key=CARRIES_SELECTBOX_KEY,
+    )
+
+    selected_label = st.selectbox(
+        "Player",
+        options=labels,
+        key=CARRIES_SELECTBOX_KEY,
+        placeholder="Select a player",
+    )
+
+    if not selected_label:
+        st.info("Select a player from the list or the Ranking tab.")
+        return
+
+    player_id = id_by_label[selected_label]
+    st.session_state["carries_map_player_id"] = player_id
+    player = dict(players_by_id[player_id])
+    if not player.get("eligible_for_rating"):
+        group = str(player.get("position_group") or "—")
+        player = ce_rate_player_vs_eligible_pool(player, pool_by_position.get(group, []))
+    carries = carries_by_player.get(player_id)
+    dribbles = dribbles_by_player.get(player_id)
+
+    render_carries_player_layout(player, carries, dribbles)
 
 
 def render_rating_section(rated: list[dict], *, selected_player_id: str | None) -> None:
@@ -2540,8 +2811,12 @@ def main() -> None:
             xt_surface_mode=xt_surface_mode,
         )
         serie_a_passes = load_serie_a_passes()
+        _, carries_players = load_carries_analytics()
+        carries_by_player = load_carries_grouped()
+        dribbles_by_player = load_dribbles_grouped()
 
     rated, players_by_id, pool_by_position = compute_pass_ratings(all_players)
+    _, carries_by_id, carries_pool_by_position = ce_compute_pass_ratings(carries_players)
     selected_player_id = st.session_state.get("map_player_id")
 
     tab_pres, tab_dashboard, tab_ranking, tab_sim_ba, tab_sim_ab = st.tabs(
@@ -2552,7 +2827,17 @@ def main() -> None:
             all_players, passes_by_player, players_by_id, pool_by_position, rated=rated,
         )
     with tab_dashboard:
-        render_map_section(all_players, players_by_id, pool_by_position, passes_by_player)
+        dash_passes, dash_carries = st.tabs(["Passes", "Carries"])
+        with dash_passes:
+            render_map_section(all_players, players_by_id, pool_by_position, passes_by_player)
+        with dash_carries:
+            render_carries_map_section(
+                carries_players,
+                carries_by_id,
+                carries_pool_by_position,
+                carries_by_player,
+                dribbles_by_player,
+            )
     with tab_ranking:
         render_rating_section(rated, selected_player_id=selected_player_id)
     with tab_sim_ba:
