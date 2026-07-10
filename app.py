@@ -79,8 +79,9 @@ RATING_MIN_MINUTES_PCT = pe.RATING_MIN_MINUTES_PCT
 RATING_MIN_PASSES_PCT = pe.RATING_MIN_PASSES_PCT
 RATING_ELIGIBILITY_PERCENTILE = getattr(pe, "RATING_ELIGIBILITY_PERCENTILE", 75)
 SIMILARITY_TOP_K = 10
-SIMILARITY_SELECT_SB_KEY = "similarity_player_select_sb"
-SIMILARITY_SELECT_SA_KEY = "similarity_player_select_sa"
+PLAYER_ANALYSIS_SELECT_KEY = "player_analysis_select"
+PLAYER_ANALYSIS_SHOW_MAPS_KEY = "pa_show_maps"
+PLAYER_ANALYSIS_SHOW_SIMILAR_KEY = "pa_show_similar"
 FIXED_CLASSIFICATION_MODEL = CLASSIFICATION_MODEL_DEFAULT
 FIXED_TIER_MODEL = TIER_MODEL_DEFAULT
 FIXED_XT_SURFACE_MODE = XT_SURFACE_MODE_DEFAULT
@@ -1211,6 +1212,106 @@ st.markdown(
         white-space: nowrap;
     }
     section[data-testid="stSidebar"] { display: none; }
+    .pa-shell { max-width: 1080px; margin: 0 auto 1.25rem auto; }
+    .pa-hero-card {
+        background: linear-gradient(145deg, #172035 0%, #101522 58%, #0f172a 100%);
+        border: 1px solid #334155;
+        border-radius: 14px;
+        padding: 1.1rem 1.25rem 1rem;
+        margin: 0.35rem 0 0.85rem 0;
+        box-shadow: 0 10px 28px rgba(2, 6, 23, 0.28);
+    }
+    .pa-hero-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.85rem;
+    }
+    .pa-hero-title {
+        margin: 0;
+        color: #f8fafc;
+        font-size: 1.45rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1.15;
+    }
+    .pa-hero-meta {
+        margin: 0.3rem 0 0 0;
+        color: #94a3b8;
+        font-size: 0.88rem;
+    }
+    .pa-hero-badges {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-top: 0.45rem;
+    }
+    .pa-hero-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.22rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid #334155;
+        background: rgba(15, 23, 42, 0.72);
+        color: #cbd5e1;
+        font-size: 0.74rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+    }
+    .pa-hero-metrics {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.55rem;
+    }
+    @media (max-width: 900px) {
+        .pa-hero-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .pa-metric-tile {
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid #243049;
+        border-radius: 10px;
+        padding: 0.55rem 0.65rem;
+        min-height: 3.35rem;
+    }
+    .pa-metric-label {
+        color: #8fa3bf;
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.2rem;
+    }
+    .pa-metric-value {
+        color: #f8fafc;
+        font-size: 1.12rem;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+    .pa-metric-sub {
+        color: #64748b;
+        font-size: 0.72rem;
+        margin-top: 0.12rem;
+    }
+    .pa-panel {
+        background: linear-gradient(160deg, #151b2b 0%, #101522 100%);
+        border: 1px solid #2a3550;
+        border-radius: 12px;
+        padding: 0.15rem 0.35rem 0.35rem;
+        margin-top: 0.85rem;
+    }
+    .pa-panel-title {
+        color: #93c5fd;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.75rem 0.75rem 0.35rem;
+    }
+    .pa-profile-wrap .dashboard-sidebar-stack { margin-bottom: 0; }
+    .pa-profile-wrap .player-card { margin-bottom: 0.55rem; }
+    .pa-similar-wrap { margin-top: 0.85rem; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -2523,6 +2624,339 @@ def render_progression_map_section(
     )
 
 
+def _resolve_progression_analysis_player(
+    player_id: str | None,
+    progression_by_id: dict[str, dict],
+    pass_by_id: dict[str, dict],
+    carry_by_id: dict[str, dict],
+    progression_pool_by_position: dict[str, list[dict]],
+    pass_pool_by_position: dict[str, list[dict]],
+    carry_pool_by_position: dict[str, list[dict]],
+) -> dict | None:
+    if not player_id:
+        return None
+
+    player = progression_by_id.get(player_id)
+    if player is None or not player.get("eligible_for_rating"):
+        pass_player = _resolve_dashboard_player(player_id, pass_by_id, pass_pool_by_position)
+        carry_player = _resolve_dashboard_player(
+            player_id,
+            carry_by_id,
+            carry_pool_by_position,
+            rate_fn=ce_rate_player_vs_eligible_pool,
+        )
+        if pass_player is None and carry_player is None:
+            return None
+        base = dict(player or pass_player or carry_player or {})
+        return pg_build_progression_dashboard_player(
+            base,
+            pass_player,
+            carry_player,
+            progression_player=progression_by_id.get(player_id),
+        )
+    return dict(player)
+
+
+def render_progression_maps_only(player: dict, passes, carries) -> None:
+    team_label = player.get("team", "—")
+    player_name = player["player_name"]
+    r1c1, r1c2 = st.columns(2, gap="small")
+    with r1c1:
+        fig_all = draw_all_actions_map(
+            passes, carries, player_name, team_label, compact=False,
+        )
+        st.pyplot(fig_all, clear_figure=True, use_container_width=True)
+    with r1c2:
+        fig_heat_all = draw_all_actions_heatmap(
+            passes, carries, player_name, team_label, compact=False,
+        )
+        st.pyplot(fig_heat_all, clear_figure=True, use_container_width=True)
+
+    r2c1, r2c2 = st.columns(2, gap="small")
+    with r2c1:
+        fig_threat = draw_threat_actions_map(
+            passes, carries, player_name, team_label, compact=False,
+        )
+        st.pyplot(fig_threat, clear_figure=True, use_container_width=True)
+    with r2c2:
+        fig_heat_threat = draw_threat_actions_heatmap(
+            passes, carries, player_name, team_label, compact=False,
+        )
+        st.pyplot(fig_heat_threat, clear_figure=True, use_container_width=True)
+
+
+def _player_analysis_hero_html(player: dict) -> str:
+    search_pos = sim.player_search_position(player)
+    group_label = sim.similarity_position_label(search_pos) if search_pos else "—"
+    badges = _rating_badges_html(player)
+    badges_block = (
+        f'<div class="pa-hero-badges">{badges}</div>' if badges else ""
+    )
+    overall = fmt_rating_score(player.get("progression_rating"))
+    pass_score = fmt_rating_score(player.get("pass_rating"))
+    carry_score = fmt_rating_score(player.get("carry_rating"))
+    metric_tiles = [
+        ("Overall", overall, "Combined progression"),
+        ("Pass", pass_score, "Pass rating"),
+        ("Carry", carry_score, "Carry rating"),
+        ("Minutes", fmt_stat_value("minutes", player.get("minutes")), "Season total"),
+        ("Actions", fmt_stat_value("passes_completed", player.get("passes_completed")), "Completed passes"),
+    ]
+    tiles_html = "".join(
+        (
+            '<div class="pa-metric-tile">'
+            f'<div class="pa-metric-label">{html.escape(label)}</div>'
+            f'<div class="pa-metric-value">{html.escape(value)}</div>'
+            f'<div class="pa-metric-sub">{html.escape(sub)}</div>'
+            "</div>"
+        )
+        for label, value, sub in metric_tiles
+    )
+    return (
+        '<div class="pa-hero-card">'
+        '<div class="pa-hero-top">'
+        "<div>"
+        f'<h2 class="pa-hero-title">{html.escape(str(player.get("player_name", "—")))}</h2>'
+        f'<p class="pa-hero-meta">{html.escape(str(player.get("team", "—")))} · '
+        f'{html.escape(str(player.get("position", "—")))} · '
+        f'{html.escape(group_label)}</p>'
+        f"{badges_block}"
+        "</div>"
+        f'<span class="pa-hero-chip">Premier League</span>'
+        "</div>"
+        f'<div class="pa-hero-metrics">{tiles_html}</div>'
+        "</div>"
+    )
+
+
+def _sync_player_analysis_selection(
+    players_by_id: dict[str, dict],
+    label_by_id: dict[str, str],
+) -> None:
+    _sync_player_selection(
+        players_by_id,
+        label_by_id,
+        selectbox_key=PLAYER_ANALYSIS_SELECT_KEY,
+    )
+    map_id = st.session_state.get("map_player_id")
+    if map_id and map_id in label_by_id:
+        st.session_state[PLAYER_ANALYSIS_SELECT_KEY] = label_by_id[map_id]
+
+
+def _prepare_sb_to_sa_similarity_context(
+    all_players: list[dict],
+    carries_players_sb: list[dict],
+) -> tuple[dict, dict, dict[str, dict], dict[str, list[dict]], dict[str, list[dict]]] | None:
+    serie_a_players = load_serie_a_players()
+    if not serie_a_players:
+        return None
+
+    serie_a_passes = load_serie_a_passes()
+    serie_a_carries = load_serie_a_carries()
+    serie_a_carry_players = load_serie_a_carry_players()
+    sb_carry_by_id = {str(p["player_id"]): p for p in carries_players_sb}
+    sa_carry_by_id = {str(p["player_id"]): p for p in serie_a_carry_players}
+    sb_merged = sim.enrich_players_with_carry_metrics(
+        enrich_player_eligibility(all_players),
+        sb_carry_by_id,
+    )
+    sa_merged = sim.enrich_players_with_carry_metrics(
+        enrich_player_eligibility(serie_a_players),
+        sa_carry_by_id,
+    )
+    sb_by_pos = sim.group_players_by_detailed_position(sb_merged)
+    sa_by_pos = sim.group_players_by_detailed_position(sa_merged)
+    players_sb_by_id = {str(p["player_id"]): p for p in sb_merged}
+    return (
+        serie_a_passes,
+        serie_a_carries,
+        players_sb_by_id,
+        sa_by_pos,
+        sb_by_pos,
+    )
+
+
+def _render_player_analysis_similarity(
+    target_id: str,
+    *,
+    passes_by_player: dict,
+    carries_by_player: dict,
+    carries_players_sb: list[dict],
+    all_players: list[dict],
+) -> None:
+    with st.spinner("Loading Serie A reference pool…"):
+        context = _prepare_sb_to_sa_similarity_context(all_players, carries_players_sb)
+    if context is None:
+        st.warning(
+            "Serie A data unavailable — confirm season_all_brfull.csv and redeploy the app."
+        )
+        return
+
+    serie_a_passes, serie_a_carries, players_sb_by_id, sa_by_pos, sb_by_pos = context
+    if target_id not in players_sb_by_id:
+        st.warning("Selected player is not available for similarity.")
+        return
+
+    target_player = dict(players_sb_by_id[target_id])
+    search_pos = sim.player_search_position(target_player)
+    if not search_pos:
+        st.warning("Invalid position for comparison (goalkeepers are excluded).")
+        return
+
+    pool = sim.similarity_search_pool(sa_by_pos, search_pos)
+    pool_label = f"Serie A · {sim.similarity_position_label(search_pos)}"
+    if not pool:
+        st.warning(
+            f"No eligible Serie A players at **{html.escape(sim.similarity_position_label(search_pos))}**."
+        )
+        return
+
+    st.caption(
+        f"Top {SIMILARITY_TOP_K} Serie A players in **{html.escape(pool_label)}** "
+        f"({len(pool)} eligible). Ranked by pass+carry metric z-scores; "
+        "Origin blends pass and carry start locations."
+    )
+    results = sim.find_similar_option_c(target_player, pool, top_k=SIMILARITY_TOP_K)
+    results = sim.attach_pass_origin_similarity(
+        results,
+        passes_by_player.get(target_id),
+        serie_a_passes,
+        target_carries=carries_by_player.get(target_id),
+        carries_by_id=serie_a_carries,
+    )
+    _render_similarity_results_tab(
+        results=results,
+        target=target_player,
+        target_passes=passes_by_player.get(target_id),
+        pool_passes=serie_a_passes,
+        target_carries=carries_by_player.get(target_id),
+        pool_carries=serie_a_carries,
+        target_league="Premier League",
+        similar_league="Serie A",
+        target_pool_by_pos=sb_by_pos,
+        similar_pool_by_pos=sa_by_pos,
+        pick_key="pa_similar_pick",
+        include_origin=False,
+        origin_column=True,
+    )
+    with st.expander("Metrics used in similarity"):
+        st.write(", ".join(sim.similarity_metric_label(k) for k in sim.SIMILARITY_METRICS_A))
+
+
+def render_player_analysis_section(
+    all_players: list[dict],
+    carries_players: list[dict],
+    passes_by_player: dict,
+    carries_by_player: dict,
+    progression_by_id: dict[str, dict],
+    pass_by_id: dict[str, dict],
+    carry_by_id: dict[str, dict],
+    progression_pool_by_position: dict[str, list[dict]],
+    pass_pool_by_position: dict[str, list[dict]],
+    carry_pool_by_position: dict[str, list[dict]],
+) -> None:
+    st.subheader("Player Analysis")
+    st.caption(
+        "Select a Premier League player for a focused rating breakdown. "
+        "Optionally reveal progression maps or Serie A comparables — loaded only when requested."
+    )
+
+    if not all_players:
+        st.info("No players available.")
+        return
+
+    options = _player_options(all_players)
+    if not options:
+        st.info("No players available for analysis.")
+        return
+
+    labels = [o[3] for o in options]
+    id_by_label = {o[3]: o[0] for o in options}
+    label_by_id = {o[0]: o[3] for o in options}
+    players_by_id = {str(p["player_id"]): p for p in all_players}
+
+    _sync_player_analysis_selection(players_by_id, label_by_id)
+
+    selected_label = st.selectbox(
+        "Player",
+        options=labels,
+        key=PLAYER_ANALYSIS_SELECT_KEY,
+        placeholder="Select a player",
+    )
+    if not selected_label:
+        st.info("Select a player to open the analysis profile.")
+        return
+
+    player_id = id_by_label[selected_label]
+    st.session_state["map_player_id"] = player_id
+
+    player = _resolve_progression_analysis_player(
+        player_id,
+        progression_by_id,
+        pass_by_id,
+        carry_by_id,
+        progression_pool_by_position,
+        pass_pool_by_position,
+        carry_pool_by_position,
+    )
+    if player is None:
+        st.warning("Could not build a rating profile for this player.")
+        return
+
+    st.markdown('<div class="pa-shell">', unsafe_allow_html=True)
+    st.markdown(_player_analysis_hero_html(player), unsafe_allow_html=True)
+
+    toggle_maps, toggle_similar, _ = st.columns([1.1, 1.35, 2.55], gap="small")
+    with toggle_maps:
+        show_maps = st.toggle("Show progression maps", key=PLAYER_ANALYSIS_SHOW_MAPS_KEY)
+    with toggle_similar:
+        show_similar = st.toggle("Show Serie A comparables", key=PLAYER_ANALYSIS_SHOW_SIMILAR_KEY)
+
+    st.markdown('<div class="pa-profile-wrap">', unsafe_allow_html=True)
+    render_dashboard_sidebar(
+        player,
+        scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
+        pillar_labels=_PROGRESSION_PILLAR_RADAR_LABELS,
+        participation_keys=PROGRESSION_PARTICIPATION_KEYS,
+        label_fn=pg_analyst_metric_label,
+        tooltip_fn=pg_metric_tooltip,
+        rank_in_group_fn=pg_rank_in_group_label,
+        fmt_pct_fn=pg_fmt_pct,
+        fmt_stat_fn=pg_fmt_stat_value,
+        confidence_minutes=RATING_CONFIDENCE_MINUTES,
+        confidence_passes=RATING_CONFIDENCE_PASSES,
+        rating_key="progression_rating",
+        rating_slot_fn=_progression_rating_slot_html,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if show_maps:
+        st.markdown(
+            '<div class="pa-panel"><div class="pa-panel-title">Progression maps</div></div>',
+            unsafe_allow_html=True,
+        )
+        render_progression_maps_only(
+            player,
+            passes_by_player.get(player_id),
+            carries_by_player.get(player_id),
+        )
+
+    if show_similar:
+        st.markdown(
+            '<div class="pa-similar-wrap"><div class="pa-panel-title">Serie A comparables</div></div>',
+            unsafe_allow_html=True,
+        )
+        _render_player_analysis_similarity(
+            player_id,
+            passes_by_player=passes_by_player,
+            carries_by_player=carries_by_player,
+            carries_players_sb=carries_players,
+            all_players=all_players,
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def render_rating_section(
     rated: list[dict],
     *,
@@ -2755,9 +3189,9 @@ PRES_FEATURE_SPECS: tuple[tuple[str, str, str], ...] = (
         "Tables by position group — click a player to open the Dashboard.",
     ),
     (
-        "similarity",
-        "Similarity",
-        "Compare players across leagues in the same position (side respected).",
+        "player_analysis",
+        "Player Analysis",
+        "Focused player profile with optional progression maps and Serie A comparables.",
     ),
 )
 
@@ -2784,38 +3218,34 @@ def _render_pres_feature_cards() -> None:
                 _toggle_pres_demo(key)
 
 
-def _similarity_mock_inner_html() -> str:
+def _player_analysis_mock_inner_html() -> str:
     table_rows = "".join(
-        f"<tr><td>{n}</td><td>Player {n}</td><td>Team</td><td>{90 - i * 4}%</td><td>{75 - i * 3}%</td></tr>"
-        for i, n in enumerate(range(1, 6), start=0)
+        f"<tr><td>{n}</td><td>SA Player {n}</td><td>Serie A</td><td>{90 - i * 4}%</td><td>{75 - i * 3}%</td></tr>"
+        for i, n in enumerate(range(1, 4), start=0)
     )
     return (
         '<div class="pres-sim-mock">'
-        '<div class="pres-sim-mock-head">Similarity B → A</div>'
-        '<div class="pres-sim-mock-field">Serie B player · select from the list</div>'
+        '<div class="pres-sim-mock-head">Player Analysis</div>'
+        '<div class="pres-sim-mock-field">Premier League player · rating profile</div>'
+        '<div class="pres-sim-mock-field" style="margin-top:0.45rem">Optional: progression maps · Serie A comparables</div>'
         '<table class="pres-sim-mock-table"><thead><tr>'
-        "<th>#</th><th>Player</th><th>Team</th><th>Sim.</th><th>Origin</th>"
+        "<th>#</th><th>Player</th><th>League</th><th>Sim.</th><th>Origin</th>"
         f"</tr></thead><tbody>{table_rows}</tbody></table>"
-        '<div class="pres-sim-mock-compare">'
-        '<div class="pres-sim-mock-map"></div><div class="pres-sim-mock-map"></div>'
-        "</div>"
-        '<div class="pres-sim-mock-metrics"></div>'
         "</div>"
     )
 
 
-def _render_presentation_similarity_demo() -> None:
+def _render_presentation_player_analysis_demo() -> None:
     demo_html = (
         '<div class="pres-blur-panel pres-blur-panel-wide">'
-        f'<div class="pres-blur-back">{_similarity_mock_inner_html()}</div>'
+        f'<div class="pres-blur-back">{_player_analysis_mock_inner_html()}</div>'
         '<div class="pres-blur-overlay pres-blur-overlay-side">'
         '<div class="pres-blur-caption">'
-        "<strong>Similarity B ↔ A</strong>"
-        "<p>Select a player from one league and see the <strong>10 most similar</strong> "
-        "in the other league at the same position group "
-        "(Centerback, Right Back, Left Back, Midfielders, Right Winger, Left Winger, Strikers).</p>"
-        "<p style='margin-top:0.45rem'>Ranked by pass-metric z-scores. "
-        "Click a row to compare maps and percentiles side by side.</p>"
+        "<strong>Player Analysis</strong>"
+        "<p>Start with a clean rating profile for any Premier League player. "
+        "Reveal <strong>progression maps</strong> or <strong>Serie A comparables</strong> only when you need them.</p>"
+        "<p style='margin-top:0.45rem'>Comparables are ranked by pass+carry metrics at the same position group. "
+        "Click a row to compare percentiles and origin profiles side by side.</p>"
         "</div></div></div>"
     )
     st.html(demo_html, width="stretch")
@@ -2845,7 +3275,7 @@ def _render_pres_flow_steps() -> None:
         ("Overview", "Understand the layout and browse previews."),
         ("Dashboard", "Analyze maps and player cards for any player."),
         ("Ranking", "Explore rankings by group and open players in the Dashboard."),
-        ("Similarity", "Compare players across leagues."),
+        ("Player Analysis", "Deep-dive on a player with optional maps and Serie A comparables."),
     ]
     items = []
     for idx, (title, text) in enumerate(steps, start=1):
@@ -2898,8 +3328,8 @@ def render_presentation_tab(
                 st.info("No sample player available for the Dashboard preview.")
         elif active_demo == "ranking":
             _render_presentation_ranking_demo(_rating_groups_from_rated(rated))
-        elif active_demo == "similarity":
-            _render_presentation_similarity_demo()
+        elif active_demo == "player_analysis":
+            _render_presentation_player_analysis_demo()
         st.markdown("</div>", unsafe_allow_html=True)
 
     _render_pres_flow_steps()
@@ -3121,167 +3551,7 @@ def _render_similarity_results_tab(
     )
 
 
-def render_similarity_section(
-    all_players: list[dict],
-    passes_by_player_sb: dict,
-    carries_by_player_sb: dict,
-    carries_players_sb: list[dict],
-    *,
-    sb_to_sa: bool,
-) -> None:
-    import pandas as pd
-
-    serie_a_passes = load_serie_a_passes()
-    title = "Similarity B → A" if sb_to_sa else "Similarity A → B"
-    st.subheader(title)
-    st.caption(
-        f"Select a player from {'Serie B' if sb_to_sa else 'Serie A'}; "
-        f"the table shows the top {SIMILARITY_TOP_K} from {'Serie A' if sb_to_sa else 'Serie B'} "
-        "at the same position group (Centerback, Right Back, Left Back, Midfielders, "
-        "Right Winger, Left Winger, Strikers). Similarity uses pass and carry metrics; "
-        "origin blends pass and carry start locations. Click a row to compare."
-    )
-
-    if not all_players:
-        st.info("No players available.")
-        return
-
-    serie_a_players = load_serie_a_players()
-    if not serie_a_players:
-        st.warning(
-            "Serie A data unavailable — confirm season_all_brfull.csv and redeploy the app."
-        )
-        return
-
-    serie_a_carries = load_serie_a_carries()
-    serie_a_carry_players = load_serie_a_carry_players()
-    sb_carry_by_id = {str(p["player_id"]): p for p in carries_players_sb}
-    sa_carry_by_id = {str(p["player_id"]): p for p in serie_a_carry_players}
-
-    sb_enriched = enrich_player_eligibility(all_players)
-    serie_a_enriched = enrich_player_eligibility(serie_a_players)
-    sb_merged = sim.enrich_players_with_carry_metrics(sb_enriched, sb_carry_by_id)
-    sa_merged = sim.enrich_players_with_carry_metrics(serie_a_enriched, sa_carry_by_id)
-
-    prefix = "ba" if sb_to_sa else "ab"
-    serie_a_by_pos = sim.group_players_by_detailed_position(sa_merged)
-    sb_by_pos = sim.group_players_by_detailed_position(sb_merged)
-    players_sb_by_id = {str(p["player_id"]): p for p in sb_merged}
-    players_sa_by_id = {str(p["player_id"]): p for p in sa_merged}
-
-    if sb_to_sa:
-        options = _player_options(sb_merged)
-        select_label = "Serie B player"
-        select_key = SIMILARITY_SELECT_SB_KEY
-    else:
-        options = _player_options(sa_merged)
-        select_label = "Serie A player"
-        select_key = SIMILARITY_SELECT_SA_KEY
-
-    if not options:
-        st.info("No players available for similarity.")
-        return
-
-    labels = [o[3] for o in options]
-    id_by_label = {o[3]: o[0] for o in options}
-    selected_label = st.selectbox(
-        select_label,
-        options=labels,
-        key=select_key,
-        placeholder="Select a player",
-    )
-    if not selected_label:
-        st.info("Select a player to view similar players.")
-        return
-
-    target_id = id_by_label[selected_label]
-    search_pos = sim.player_search_position(
-        players_sb_by_id[target_id] if sb_to_sa else players_sa_by_id[target_id]
-    )
-    if sb_to_sa:
-        target = dict(players_sb_by_id[target_id])
-        target_passes = passes_by_player_sb.get(target_id)
-        target_carries = carries_by_player_sb.get(target_id)
-        pool = sim.similarity_search_pool(serie_a_by_pos, search_pos)
-        pool_passes = serie_a_passes
-        pool_carries = serie_a_carries
-        pool_label = f"Serie A · {sim.similarity_position_label(search_pos)}"
-        target_league = "Serie B"
-    else:
-        target = dict(players_sa_by_id[target_id])
-        target_passes = serie_a_passes.get(target_id)
-        target_carries = serie_a_carries.get(target_id)
-        pool = sim.similarity_search_pool(sb_by_pos, search_pos)
-        pool_passes = passes_by_player_sb
-        pool_carries = carries_by_player_sb
-        pool_label = f"Serie B · {sim.similarity_position_label(search_pos)}"
-        target_league = "Serie A"
-
-    if not search_pos:
-        st.warning("Invalid position for comparison (goalkeepers are excluded).")
-        return
-
-    if not pool:
-        st.warning(
-            f"No eligible players at position **{html.escape(sim.similarity_position_label(search_pos))}** "
-            f"in {pool_label.split(' · ')[0]}."
-        )
-        return
-
-    group_label = sim.similarity_position_label(search_pos)
-    st.markdown(
-        f"**{html.escape(str(target.get('player_name', '—')))}** · "
-        f"{html.escape(str(target.get('team', '—')))} · "
-        f"{html.escape(str(target.get('position', '—')))} · "
-        f"**{html.escape(group_label)}** · "
-        f"{html.escape(target_league)} → pool **{html.escape(pool_label)}** ({len(pool)} players)",
-        unsafe_allow_html=True,
-    )
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Minutos", fmt_stat_value("minutes", target.get("minutes")))
-    c2.metric("Passes", fmt_stat_value("passes_completed", target.get("passes_completed")))
-    c3.metric("Carries", fmt_stat_value("carries_total", target.get("carries_total")))
-
-    top_k = SIMILARITY_TOP_K
-    target_league_label = target_league
-    similar_league_label = "Serie A" if sb_to_sa else "Serie B"
-
-    st.caption(
-        f"Ranked by pass+carry metric z-scores in the {similar_league_label} pool. "
-        "The Origin column blends pass and carry start locations and does not change the ranking."
-    )
-    results = sim.find_similar_option_c(target, pool, top_k=top_k)
-    results = sim.attach_pass_origin_similarity(
-        results,
-        target_passes,
-        pool_passes,
-        target_carries=target_carries,
-        carries_by_id=pool_carries,
-    )
-    _render_similarity_results_tab(
-        results=results,
-        target=target,
-        target_passes=target_passes,
-        pool_passes=pool_passes,
-        target_carries=target_carries,
-        pool_carries=pool_carries,
-        target_league=target_league_label,
-        similar_league=similar_league_label,
-        target_pool_by_pos=sb_by_pos if sb_to_sa else serie_a_by_pos,
-        similar_pool_by_pos=serie_a_by_pos if sb_to_sa else sb_by_pos,
-        pick_key=f"sim_{prefix}_pick",
-        include_origin=False,
-        origin_column=True,
-    )
-    with st.expander("Metrics used"):
-        st.write(", ".join(sim.similarity_metric_label(k) for k in sim.SIMILARITY_METRICS_A))
-
-
 def main() -> None:
-    classification_model = FIXED_CLASSIFICATION_MODEL
-    tier_model = FIXED_TIER_MODEL
-    xt_surface_mode = FIXED_XT_SURFACE_MODE
-
     with st.spinner("Loading data…"):
         all_players, carries_players, passes_by_player, carries_by_player, dribbles_by_player = load_core_data()
         (
@@ -3298,8 +3568,8 @@ def main() -> None:
 
     selected_player_id = st.session_state.get("map_player_id")
 
-    tab_pres, tab_dashboard, tab_ranking, tab_sim_ba, tab_sim_ab = st.tabs(
-        ["Overview", "Dashboard", "Ranking", "Similarity B->A", "Similarity A->B"]
+    tab_pres, tab_dashboard, tab_ranking, tab_analysis = st.tabs(
+        ["Overview", "Dashboard", "Ranking", "Player Analysis"]
     )
     with tab_pres:
         render_presentation_tab(
@@ -3349,21 +3619,18 @@ def main() -> None:
             carry_rated,
             selected_player_id=selected_player_id,
         )
-    with tab_sim_ba:
-        render_similarity_section(
+    with tab_analysis:
+        render_player_analysis_section(
             all_players,
+            carries_players,
             passes_by_player,
             carries_by_player,
-            carries_players,
-            sb_to_sa=True,
-        )
-    with tab_sim_ab:
-        render_similarity_section(
-            all_players,
-            passes_by_player,
-            carries_by_player,
-            carries_players,
-            sb_to_sa=False,
+            progression_by_id,
+            players_by_id,
+            carries_by_id,
+            progression_pool_by_position,
+            pool_by_position,
+            carries_pool_by_position,
         )
 
 
