@@ -246,22 +246,22 @@ def _rating_badges_html(player: dict) -> str:
     if player.get("rating_pareto_badge"):
         badges.append(
             '<span class="rating-badge-tip">'
-            '<span class="rating-achievement-dot pareto"></span>'
+            '<i class="fa-solid fa-layer-group rating-fa-badge versatile" aria-hidden="true"></i>'
             '<span class="rating-tipbox">Versatile</span>'
             "</span>"
         )
     if player.get("rating_archetype_badge"):
         badges.append(
             '<span class="rating-badge-tip">'
-            '<span class="rating-achievement-dot archetype"></span>'
+            '<i class="fa-solid fa-medal rating-fa-badge complete" aria-hidden="true"></i>'
             '<span class="rating-tipbox">Complete</span>'
             "</span>"
         )
     if player.get("rating_dual_elite_badge"):
         badges.append(
             '<span class="rating-badge-tip">'
-            '<span class="rating-achievement-dot dual-elite"></span>'
-            '<span class="rating-tipbox">Elite in passes & carries</span>'
+            '<i class="fa-solid fa-bolt rating-fa-badge dual-elite" aria-hidden="true"></i>'
+            '<span class="rating-tipbox">Elite in passes &amp; carries</span>'
             "</span>"
         )
     if not badges:
@@ -300,6 +300,8 @@ def _pillar_radar_b64(
     confidence_minutes: float = RATING_CONFIDENCE_MINUTES,
     confidence_passes: float = RATING_CONFIDENCE_PASSES,
     radar_figsize: tuple[float, float] = (3.4, 3.4),
+    line_color: str = "#60a5fa",
+    fill_color: str | None = None,
 ) -> str:
     import base64
     import io
@@ -333,7 +335,8 @@ def _pillar_radar_b64(
         confidence_passes=confidence_passes,
     )
     line_alpha = 0.55 if low_sample else 0.95
-    fill_alpha = 0.12 if low_sample else 0.22
+    fill_alpha = 0.18 if low_sample else 0.32
+    radar_fill = fill_color or line_color
 
     fig, ax = plt.subplots(
         figsize=radar_figsize,
@@ -344,8 +347,8 @@ def _pillar_radar_b64(
     ax.set_facecolor("none")
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
-    ax.plot(angles_closed, values_closed, color="#60a5fa", linewidth=2.4, alpha=line_alpha)
-    ax.fill(angles_closed, values_closed, color="#60a5fa", alpha=fill_alpha)
+    ax.plot(angles_closed, values_closed, color=line_color, linewidth=2.4, alpha=line_alpha)
+    ax.fill(angles_closed, values_closed, color=radar_fill, alpha=fill_alpha)
     ax.set_ylim(4.0, 8.0)
     ax.set_yticks([5, 6, 7])
     ax.set_yticklabels([])
@@ -389,8 +392,16 @@ def _pillar_radar_card_html(player: dict, **kwargs) -> str:
 APP_NAME = "Pass Scout"
 APP_LEAGUE = "Premier League"
 PRES_DEMO_KEY = "pres_active_demo"
+FONT_AWESOME_CDN = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+PA_RADAR_LINE_COLOR = "#c4b5fd"
+PA_RADAR_FILL_COLOR = "#c4b5fd"
 
 st.set_page_config(page_title=f"{APP_NAME} | {APP_LEAGUE}", layout="wide", initial_sidebar_state="collapsed")
+
+st.markdown(
+    f'<link rel="stylesheet" href="{FONT_AWESOME_CDN}" crossorigin="anonymous" referrerpolicy="no-referrer" />',
+    unsafe_allow_html=True,
+)
 
 st.markdown(
     """
@@ -534,6 +545,15 @@ st.markdown(
     .rating-achievement-dot.pareto { background: #38bdf8; }
     .rating-achievement-dot.archetype { background: #a78bfa; }
     .rating-achievement-dot.dual-elite { background: #f59e0b; }
+    .rating-fa-badge {
+        font-size: 0.82rem;
+        width: 1rem;
+        text-align: center;
+        line-height: 1;
+    }
+    .rating-fa-badge.versatile { color: #38bdf8; }
+    .rating-fa-badge.complete { color: #a78bfa; }
+    .rating-fa-badge.dual-elite { color: #f59e0b; }
     .sub-rating-row {
         display: flex;
         flex-wrap: wrap;
@@ -1220,7 +1240,7 @@ st.markdown(
         display: grid;
         grid-template-columns: minmax(220px, 0.92fr) minmax(320px, 1.35fr) minmax(210px, 0.78fr);
         gap: 0.75rem;
-        align-items: stretch;
+        align-items: start;
     }
     @media (max-width: 1100px) {
         .pa-layout { grid-template-columns: 1fr; }
@@ -1230,40 +1250,38 @@ st.markdown(
         flex-direction: column;
         gap: 0;
         min-width: 0;
-        height: 100%;
     }
     .pa-col-score {
         display: flex;
         flex-direction: column;
-        height: 100%;
     }
     .pa-score-stack {
         display: flex;
         flex-direction: column;
-        gap: 0.65rem;
-        height: 100%;
-        flex: 1;
+        gap: 0.55rem;
+        height: var(--pa-card-h);
+        box-sizing: border-box;
     }
     .pa-col-pillars {
         min-width: 0;
-        height: 100%;
     }
     .pa-pillars-card {
-        height: 100%;
-        flex: 1;
         display: flex;
         flex-direction: column;
-        padding: 0.85rem 0.75rem 0.9rem;
+        padding: 0.75rem 0.7rem 0.7rem;
         margin-bottom: 0;
+        height: var(--pa-card-h);
+        box-sizing: border-box;
     }
     .pa-identity-card {
-        padding: 1rem 1.05rem 0.95rem;
+        padding: 0.95rem 1rem 0.85rem;
         margin-bottom: 0;
         display: flex;
         flex-direction: column;
-        gap: 0.65rem;
-        height: 100%;
-        flex: 1;
+        gap: 0.6rem;
+        height: var(--pa-card-h);
+        box-sizing: border-box;
+        justify-content: flex-start;
     }
     .pa-identity-top {
         display: flex;
@@ -1384,7 +1402,10 @@ st.markdown(
     .pa-rating-block-score .rating-box {
         min-width: 3.35rem;
         font-size: 1.35rem !important;
+        font-weight: 800 !important;
         padding: 0.38rem 0.7rem !important;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
     }
     .pa-rating-block-overall .rating-box {
         min-width: 3.85rem;
@@ -1403,31 +1424,31 @@ st.markdown(
     }
     .pa-col-score .radar-card {
         margin-bottom: 0;
-        padding: 0.7rem 0.75rem 0.8rem;
+        padding: 0.65rem 0.7rem 0.7rem;
         flex: 1;
         display: flex;
         flex-direction: column;
         min-height: 0;
     }
-    .pa-col-score .radar-card-body {
+    .pa-col-score .radar-card .radar-card-body {
         flex: 1;
-        min-height: 160px;
+        min-height: 0;
+        height: var(--pa-radar-h);
         display: flex;
         align-items: center;
         justify-content: center;
         width: 100%;
     }
-    .pa-col-score .rating-radar-wrap {
+    .pa-col-score .radar-card .rating-radar-wrap {
         width: 100%;
         height: 100%;
-        max-width: none;
-        max-height: none;
+        max-width: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
     }
-    .pa-col-score .rating-radar {
-        width: 100%;
+    .pa-col-score .radar-card .rating-radar {
+        width: auto;
         height: 100%;
         max-width: 100%;
         max-height: 100%;
@@ -1436,8 +1457,8 @@ st.markdown(
     .pa-pillars-stack {
         display: flex;
         flex-direction: column;
-        gap: 0.35rem;
-        flex: 1;
+        gap: 0.34rem;
+        flex: 0 0 auto;
     }
     .pa-pillar-group-label {
         margin: 0.55rem 0 0.3rem 0;
@@ -1698,6 +1719,29 @@ def rating_value_color(pass_rating: float | None) -> str:
     return score_display_color(float(pass_rating) * 10.0)
 
 
+def _pa_rating_box_colors(player: dict, *, rating_key: str) -> tuple[str, str]:
+    """Background and text colors for Player Analysis rating boxes."""
+    rating_val = player.get(rating_key)
+    if rating_val is None:
+        return "#334155", "#f8fafc"
+    bg = rating_value_color(float(rating_val))
+    return bg, _badge_text_color(bg)
+
+
+def _player_analysis_layout_metrics(
+    n_sections: int,
+    *,
+    n_groups: int = 2,
+) -> tuple[int, int]:
+    """Height (px) for the three main cards and the radar plot area."""
+    card_h = 28 + n_groups * 24 + n_sections * 41
+    rating_block_px = 92
+    stack_gap_px = 9
+    radar_card_pad_px = 16
+    radar_h = max(170, card_h - rating_block_px - stack_gap_px - radar_card_pad_px)
+    return card_h, radar_h
+
+
 def _player_options(rated: list[dict]) -> list[tuple[str, str, str, str]]:
     rows = sorted(
         {(p["player_id"], p["player_name"], p.get("team", "—")) for p in rated},
@@ -1758,8 +1802,8 @@ def _progression_rating_table_rows_html(
         if row.get("rating_dual_elite_badge"):
             badge = (
                 '<span class="rating-badge-tip">'
-                '<span class="rating-achievement-dot dual-elite"></span>'
-                '<span class="rating-tipbox">Elite in passes & carries</span>'
+                '<i class="fa-solid fa-bolt rating-fa-badge dual-elite" aria-hidden="true"></i>'
+                '<span class="rating-tipbox">Elite in passes &amp; carries</span>'
                 "</span>"
             )
             overall_txt = f"{overall_txt}{badge}"
@@ -1809,6 +1853,8 @@ _RANKING_EMBED_CSS = """
   color:#e2e8f0;white-space:normal;max-width:220px;line-height:1.35;box-shadow:0 8px 20px rgba(0,0,0,.4);pointer-events:none}
 .rating-sample-tip:hover .rating-sample-tipbox{display:block}
 .rating-badge-tip{position:relative;display:inline-flex;align-items:center;margin-left:0.15rem}
+.rating-fa-badge{font-size:0.82rem;width:1rem;text-align:center;line-height:1}
+.rating-fa-badge.dual-elite{color:#f59e0b}
 .rating-achievement-dot{display:inline-block;width:8px;height:8px;border-radius:50%;border:1px solid rgba(255,255,255,0.25)}
 .rating-achievement-dot.dual-elite{background:#f59e0b}
 .rating-tipbox{display:none;position:absolute;z-index:111;left:50%;top:calc(100% + 6px);transform:translateX(-50%);
@@ -1921,7 +1967,9 @@ def render_rating_board(
         overall=overall,
     )
     page = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="{FONT_AWESOME_CDN}" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<style>
 *{{box-sizing:border-box}}
 body{{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   color:#e8edf5;background:transparent}}
@@ -1972,7 +2020,9 @@ def render_rating_table(
         )
 
     page = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="{FONT_AWESOME_CDN}" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<style>
 *{{box-sizing:border-box}}
 body{{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   color:#e8edf5;background:transparent}}
@@ -2272,11 +2322,10 @@ def _rating_display_box_html(
     low_sample = _is_low_sample_rating(player, rating_key=rating_key)
     low_cls = " rating-box-low-sample" if low_sample and rating_val is not None else ""
     score_inner = _rating_score_value_html(player, rating_key=rating_key)
-    sample_warning = _rating_sample_warning_html(player)
+    sample_warning = _rating_sample_warning_html(player, rating_key=rating_key)
 
     if rating_info and rating_val is not None:
-        r_color = rating_value_color(rating_val)
-        r_txt = _badge_text_color(r_color)
+        r_color, r_txt = _pa_rating_box_colors(player, rating_key=rating_key)
         rank_txt = f'{int(rating_info["rank"])}/{int(rating_info["total"])}'
         return (
             f'<span class="rating-box-wrap">'
@@ -2288,9 +2337,10 @@ def _rating_display_box_html(
             f"{sample_warning}"
             f"</span>"
         )
+    r_color, r_txt = _pa_rating_box_colors(player, rating_key=rating_key)
     return (
         f'<span class="rating-box-wrap">'
-        f'<div class="rating-box{low_cls}" style="background:#334155;color:#f8fafc;margin-bottom:0">'
+        f'<div class="rating-box{low_cls}" style="background:{r_color};color:{r_txt};margin-bottom:0">'
         f"{score_inner}</div>"
         f"{sample_warning}"
         f"</span>"
@@ -2633,6 +2683,9 @@ def _build_player_analysis_layout_html(
     rating_slot_fn=None,
 ) -> str:
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
+    n_sections = len(scout_section_specs)
+    card_h, radar_h = _player_analysis_layout_metrics(n_sections)
+    layout_style = f"--pa-card-h: {card_h}px; --pa-radar-h: {radar_h}px;"
     rating_panel = _player_analysis_rating_panel_html(player, metric_ranks)
     radar_card = _pillar_radar_card_html(
         player,
@@ -2640,7 +2693,9 @@ def _build_player_analysis_layout_html(
         pillar_labels=pillar_labels or _PROGRESSION_PILLAR_RADAR_LABELS,
         confidence_minutes=confidence_minutes,
         confidence_passes=confidence_passes,
-        radar_figsize=(4.2, 4.2),
+        radar_figsize=(3.6, 3.6),
+        line_color=PA_RADAR_LINE_COLOR,
+        fill_color=PA_RADAR_FILL_COLOR,
     )
     identity_card = _build_player_analysis_identity_card_html(
         player,
@@ -2661,7 +2716,7 @@ def _build_player_analysis_layout_html(
         fmt_stat_fn=fmt_stat_fn,
     )
     return (
-        '<div class="pa-layout">'
+        f'<div class="pa-layout" style="{layout_style}">'
         f'<div class="pa-col pa-col-identity">{identity_card}</div>'
         '<div class="pa-col pa-col-score">'
         '<div class="pa-score-stack">'
