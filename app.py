@@ -46,6 +46,7 @@ from comparison_config import (
 )
 from passes_maps import (
     draw_all_completed_passes_map,
+    draw_action_origin_heatmap,
     draw_impact_pass_map,
     draw_pass_destination_heatmap,
     draw_pass_origin_heatmap,
@@ -1321,6 +1322,20 @@ def load_serie_a_players(_cache_version: int = DATA_CACHE_VERSION):
 
 
 @st.cache_data(show_spinner=False)
+def load_serie_a_carry_players(_cache_version: int = CARRIES_DATA_CACHE_VERSION):
+    if not hasattr(ce, "build_serie_a_carry_players"):
+        return []
+    return ce.build_serie_a_carry_players(_cache_version)
+
+
+@st.cache_data(show_spinner=False)
+def load_serie_a_carries(_cache_version: int = CARRIES_DATA_CACHE_VERSION):
+    if not hasattr(ce, "load_serie_a_carries_grouped"):
+        return {}
+    return ce.load_serie_a_carries_grouped(_cache_version)
+
+
+@st.cache_data(show_spinner=False)
 def load_carries_analytics(_cache_version: int = CARRIES_DATA_CACHE_VERSION):
     return ce_build_analytics(_cache_version)
 
@@ -1713,6 +1728,10 @@ def _badge_text_color(hex_color: str) -> str:
     b = int(hex_color[5:7], 16)
     lum = 0.299 * r + 0.587 * g + 0.114 * b
     return "#1e293b" if lum > 168 else "#f8fafc"
+
+
+def _similarity_metric_label_html(key: str) -> str:
+    return html.escape(sim.similarity_metric_label(key))
 
 
 def _metric_label_html(
@@ -2490,7 +2509,7 @@ def _comparison_metrics_html(
     for section_name, section_keys in sim.SIMILARITY_COMPARE_SECTIONS:
         rows.append(f'<div class="cmp-section-title">{html.escape(section_name)}</div>')
         for key in section_keys:
-            label = _metric_label_html(key)
+            label = _similarity_metric_label_html(key)
             t_delta, s_delta = _cmp_delta_html(target_pct.get(key), similar_pct.get(key))
             t_val = html.escape(sim.fmt_percentile_value(target_pct.get(key)))
             s_val = html.escape(sim.fmt_percentile_value(similar_pct.get(key)))
@@ -2517,6 +2536,8 @@ def _render_comparison_maps_row(
     target_passes,
     similar_passes,
     *,
+    target_carries=None,
+    similar_carries=None,
     target_league: str,
     similar_league: str,
 ) -> None:
@@ -2524,9 +2545,12 @@ def _render_comparison_maps_row(
     name_t = str(target.get("player_name", "—"))
     name_s = str(similar.get("player_name", "—"))
     with m1:
-        if target_passes is not None and not target_passes.empty:
-            fig = draw_pass_origin_heatmap(
+        if (target_passes is not None and not target_passes.empty) or (
+            target_carries is not None and not target_carries.empty
+        ):
+            fig = draw_action_origin_heatmap(
                 target_passes,
+                target_carries,
                 name_t,
                 str(target.get("team", "—")),
                 cols=sim.ORIGIN_ANALYSIS_COLS,
@@ -2535,11 +2559,14 @@ def _render_comparison_maps_row(
             )
             st.pyplot(fig, clear_figure=True, use_container_width=True)
         else:
-            st.caption("No passes.")
+            st.caption("No passes or carries.")
     with m2:
-        if similar_passes is not None and not similar_passes.empty:
-            fig = draw_pass_origin_heatmap(
+        if (similar_passes is not None and not similar_passes.empty) or (
+            similar_carries is not None and not similar_carries.empty
+        ):
+            fig = draw_action_origin_heatmap(
                 similar_passes,
+                similar_carries,
                 name_s,
                 str(similar.get("team", "—")),
                 cols=sim.ORIGIN_ANALYSIS_COLS,
@@ -2548,7 +2575,7 @@ def _render_comparison_maps_row(
             )
             st.pyplot(fig, clear_figure=True, use_container_width=True)
         else:
-            st.caption("No passes.")
+            st.caption("No passes or carries.")
 
 
 def _fig_to_blurred_b64(fig, *, blur_radius: int = 7) -> str:
@@ -2815,6 +2842,7 @@ def _render_similarity_player_panel(
     player: dict,
     passes,
     *,
+    carries=None,
     league: str,
     similarity_pct: float | None = None,
     comparison_mode: bool = False,
@@ -2829,22 +2857,32 @@ def _render_similarity_player_panel(
     st.markdown(header, unsafe_allow_html=True)
 
     if not comparison_mode:
-        m1, m2, m3 = st.columns(3)
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric("Minutos", fmt_stat_value("minutes", player.get("minutes")))
         m2.metric("Passes", fmt_stat_value("passes_completed", player.get("passes_completed")))
         m3.metric("Threat Passes p90", fmt_stat_value("impact_passes_p90", player.get("impact_passes_p90")))
+        m4.metric(
+            "Threat Carries p90",
+            fmt_stat_value("carry_impact_passes_p90", player.get("carry_impact_passes_p90")),
+        )
     else:
-        g1, g2 = st.columns(2)
+        g1, g2, g3 = st.columns(3)
         g1.metric("Minutos", fmt_stat_value("minutes", player.get("minutes")))
         g2.metric("Passes", fmt_stat_value("passes_completed", player.get("passes_completed")))
+        g3.metric("Carries", fmt_stat_value("carries_total", player.get("carries_total")))
 
-    profile = sim.pass_origin_profile(passes) if passes is not None else None
+    profile = sim.action_origin_profile(passes, carries)
     if profile is not None and not comparison_mode:
         st.caption(f"Dominant origin: {sim.describe_dominant_origin_zone(profile)}")
 
-    if not comparison_mode and passes is not None and not passes.empty:
-        fig = draw_pass_origin_heatmap(
+    has_actions = (
+        (passes is not None and not passes.empty)
+        or (carries is not None and not carries.empty)
+    )
+    if not comparison_mode and has_actions:
+        fig = draw_action_origin_heatmap(
             passes,
+            carries,
             str(player.get("player_name", "—")),
             str(player.get("team", "—")),
             cols=sim.ORIGIN_GRID_COLS,
@@ -2853,8 +2891,8 @@ def _render_similarity_player_panel(
             tiny=not comparison_mode,
         )
         st.pyplot(fig, clear_figure=True, use_container_width=comparison_mode)
-    else:
-        st.caption("No passes for origin heatmap.")
+    elif not comparison_mode:
+        st.caption("No passes or carries for origin heatmap.")
 
 
 def _similarity_results_df(
@@ -2899,6 +2937,8 @@ def _render_similarity_results_tab(
     target: dict,
     target_passes,
     pool_passes: dict,
+    target_carries=None,
+    pool_carries: dict | None = None,
     target_league: str,
     similar_league: str,
     target_pool_by_pos: dict[str, list[dict]],
@@ -2949,6 +2989,8 @@ def _render_similarity_results_tab(
     similar = dict(results[int(selected_rows[0])])
     similar_id = str(similar.get("player_id", ""))
     similar_passes = pool_passes.get(similar_id)
+    similar_carries = (pool_carries or {}).get(similar_id)
+    target_carries_data = target_carries
 
     compare_keys = sim.SIMILARITY_METRICS_A
     target_pct = sim.position_pool_percentiles(target, target_pool_by_pos, keys=compare_keys)
@@ -2967,6 +3009,8 @@ def _render_similarity_results_tab(
         similar,
         target_passes,
         similar_passes,
+        target_carries=target_carries_data,
+        similar_carries=similar_carries,
         target_league=target_league,
         similar_league=similar_league,
     )
@@ -2977,6 +3021,7 @@ def _render_similarity_results_tab(
         _render_similarity_player_panel(
             target,
             target_passes,
+            carries=target_carries_data,
             league=target_league,
             comparison_mode=True,
         )
@@ -2985,13 +3030,14 @@ def _render_similarity_results_tab(
         _render_similarity_player_panel(
             similar,
             similar_passes,
+            carries=similar_carries,
             league=similar_league,
             similarity_pct=float(similar.get("similarity_pct") or 0),
             comparison_mode=True,
         )
         if similar.get("origin_similarity_pct") is not None:
             st.caption(
-                f"Origin similarity ({sim.ORIGIN_ANALYSIS_COLS}×{sim.ORIGIN_ANALYSIS_ROWS}): "
+                f"Origin similarity — passes + carries ({sim.ORIGIN_ANALYSIS_COLS}×{sim.ORIGIN_ANALYSIS_ROWS}): "
                 f"{float(similar['origin_similarity_pct']):.1f}%"
             )
 
@@ -3012,6 +3058,8 @@ def render_similarity_section(
     all_players: list[dict],
     passes_by_player_sb: dict,
     serie_a_passes: dict,
+    carries_by_player_sb: dict,
+    carries_players_sb: list[dict],
     *,
     sb_to_sa: bool,
 ) -> None:
@@ -3023,7 +3071,8 @@ def render_similarity_section(
         f"Select a player from {'Serie B' if sb_to_sa else 'Serie A'}; "
         f"the table shows the top {SIMILARITY_TOP_K} from {'Serie A' if sb_to_sa else 'Serie B'} "
         "at the same position group (Centerback, Right Back, Left Back, Midfielders, "
-        "Right Winger, Left Winger, Strikers). Click a row to compare."
+        "Right Winger, Left Winger, Strikers). Similarity uses pass and carry metrics; "
+        "origin blends pass and carry start locations. Click a row to compare."
     )
 
     if not all_players:
@@ -3037,20 +3086,28 @@ def render_similarity_section(
         )
         return
 
+    serie_a_carries = load_serie_a_carries()
+    serie_a_carry_players = load_serie_a_carry_players()
+    sb_carry_by_id = {str(p["player_id"]): p for p in carries_players_sb}
+    sa_carry_by_id = {str(p["player_id"]): p for p in serie_a_carry_players}
+
     sb_enriched = enrich_player_eligibility(all_players)
     serie_a_enriched = enrich_player_eligibility(serie_a_players)
+    sb_merged = sim.enrich_players_with_carry_metrics(sb_enriched, sb_carry_by_id)
+    sa_merged = sim.enrich_players_with_carry_metrics(serie_a_enriched, sa_carry_by_id)
+
     prefix = "ba" if sb_to_sa else "ab"
-    serie_a_by_pos = sim.group_players_by_detailed_position(serie_a_enriched)
-    sb_by_pos = sim.group_players_by_detailed_position(sb_enriched)
-    players_sb_by_id = {str(p["player_id"]): p for p in sb_enriched}
-    players_sa_by_id = {str(p["player_id"]): p for p in serie_a_enriched}
+    serie_a_by_pos = sim.group_players_by_detailed_position(sa_merged)
+    sb_by_pos = sim.group_players_by_detailed_position(sb_merged)
+    players_sb_by_id = {str(p["player_id"]): p for p in sb_merged}
+    players_sa_by_id = {str(p["player_id"]): p for p in sa_merged}
 
     if sb_to_sa:
-        options = _player_options(sb_enriched)
+        options = _player_options(sb_merged)
         select_label = "Serie B player"
         select_key = SIMILARITY_SELECT_SB_KEY
     else:
-        options = _player_options(serie_a_enriched)
+        options = _player_options(sa_merged)
         select_label = "Serie A player"
         select_key = SIMILARITY_SELECT_SA_KEY
 
@@ -3077,15 +3134,19 @@ def render_similarity_section(
     if sb_to_sa:
         target = dict(players_sb_by_id[target_id])
         target_passes = passes_by_player_sb.get(target_id)
+        target_carries = carries_by_player_sb.get(target_id)
         pool = sim.similarity_search_pool(serie_a_by_pos, search_pos)
         pool_passes = serie_a_passes
+        pool_carries = serie_a_carries
         pool_label = f"Serie A · {sim.similarity_position_label(search_pos)}"
         target_league = "Serie B"
     else:
         target = dict(players_sa_by_id[target_id])
         target_passes = serie_a_passes.get(target_id)
+        target_carries = serie_a_carries.get(target_id)
         pool = sim.similarity_search_pool(sb_by_pos, search_pos)
         pool_passes = passes_by_player_sb
+        pool_carries = carries_by_player_sb
         pool_label = f"Serie B · {sim.similarity_position_label(search_pos)}"
         target_league = "Serie A"
 
@@ -3109,29 +3170,34 @@ def render_similarity_section(
         f"{html.escape(target_league)} → pool **{html.escape(pool_label)}** ({len(pool)} players)",
         unsafe_allow_html=True,
     )
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     c1.metric("Minutos", fmt_stat_value("minutes", target.get("minutes")))
     c2.metric("Passes", fmt_stat_value("passes_completed", target.get("passes_completed")))
+    c3.metric("Carries", fmt_stat_value("carries_total", target.get("carries_total")))
 
     top_k = SIMILARITY_TOP_K
     target_league_label = target_league
     similar_league_label = "Serie A" if sb_to_sa else "Serie B"
 
     st.caption(
-        f"Ranked by z-scores in the {similar_league_label} pool. "
-        f"The Origin column is informational (pass-origin map) and does not change the ranking."
+        f"Ranked by pass+carry metric z-scores in the {similar_league_label} pool. "
+        "The Origin column blends pass and carry start locations and does not change the ranking."
     )
     results = sim.find_similar_option_c(target, pool, top_k=top_k)
     results = sim.attach_pass_origin_similarity(
         results,
         target_passes,
         pool_passes,
+        target_carries=target_carries,
+        carries_by_id=pool_carries,
     )
     _render_similarity_results_tab(
         results=results,
         target=target,
         target_passes=target_passes,
         pool_passes=pool_passes,
+        target_carries=target_carries,
+        pool_carries=pool_carries,
         target_league=target_league_label,
         similar_league=similar_league_label,
         target_pool_by_pos=sb_by_pos if sb_to_sa else serie_a_by_pos,
@@ -3141,7 +3207,7 @@ def render_similarity_section(
         origin_column=True,
     )
     with st.expander("Metrics used"):
-        st.write(", ".join(metric_label(k) for k in sim.SIMILARITY_METRICS_A))
+        st.write(", ".join(sim.similarity_metric_label(k) for k in sim.SIMILARITY_METRICS_A))
 
 
 def main() -> None:
@@ -3222,11 +3288,21 @@ def main() -> None:
         )
     with tab_sim_ba:
         render_similarity_section(
-            all_players, passes_by_player, serie_a_passes, sb_to_sa=True
+            all_players,
+            passes_by_player,
+            serie_a_passes,
+            carries_by_player,
+            carries_players,
+            sb_to_sa=True,
         )
     with tab_sim_ab:
         render_similarity_section(
-            all_players, passes_by_player, serie_a_passes, sb_to_sa=False
+            all_players,
+            passes_by_player,
+            serie_a_passes,
+            carries_by_player,
+            carries_players,
+            sb_to_sa=False,
         )
 
 

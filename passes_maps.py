@@ -462,6 +462,119 @@ def draw_pass_origin_heatmap(
     return fig
 
 
+def draw_action_origin_heatmap(
+    passes,
+    carries=None,
+    player_name: str = "",
+    match_label: str = "all matches",
+    *,
+    cols: int = 8,
+    rows: int = 6,
+    completed_only: bool = True,
+    mini: bool = False,
+    tiny: bool = False,
+    compare: bool = False,
+):
+    """Heatmap of pass + carry start locations (origin)."""
+    cols = max(int(cols), 1)
+    rows = max(int(rows), 1)
+    if compare:
+        figsize = (5.4, 3.6)
+        dpi = 180
+    elif tiny:
+        figsize = (2.2, 1.45)
+        dpi = 120
+    elif mini:
+        figsize = (2.6, 1.7)
+        dpi = 130
+    else:
+        figsize = (FIG_W_COMPACT, FIG_H_COMPACT)
+        dpi = FIG_DPI_COMPACT
+
+    fig_w = figsize[0]
+    scale = _map_scale(fig_w)
+    fig, ax, pitch = _base_pitch(figsize=figsize, dpi=dpi)
+
+    x_bins = np.linspace(0.0, FIELD_X, cols + 1)
+    y_bins = np.linspace(0.0, FIELD_Y, rows + 1)
+    grid = np.zeros((rows, cols), dtype=float)
+
+    def _accumulate(frame, *, won_only: bool) -> None:
+        if frame is None or frame.empty:
+            return
+        work = frame
+        if won_only and "is_won" in work.columns:
+            work = work[work["is_won"].astype(bool)]
+        if work.empty or "x_start" not in work.columns or "y_start" not in work.columns:
+            return
+        x_idx = np.clip(
+            np.digitize(work["x_start"].to_numpy(), x_bins, right=True) - 1,
+            0,
+            cols - 1,
+        )
+        y_idx = np.clip(
+            np.digitize(work["y_start"].to_numpy(), y_bins, right=True) - 1,
+            0,
+            rows - 1,
+        )
+        for ix, iy in zip(x_idx, y_idx):
+            grid[iy, ix] += 1.0
+
+    _accumulate(passes, won_only=completed_only)
+    if carries is not None and not carries.empty:
+        carry_work = carries
+        if "is_dribble" in carry_work.columns:
+            carry_work = carry_work[~carry_work["is_dribble"].astype(bool)]
+        if "has_end" in carry_work.columns:
+            carry_work = carry_work[carry_work["has_end"].astype(bool)]
+        _accumulate(carry_work, won_only=False)
+
+    vmax = max(float(grid.max()), 1.0)
+    norm = Normalize(vmin=0.0, vmax=vmax)
+
+    for iy in range(rows):
+        for ix in range(cols):
+            value = float(grid[iy, ix])
+            x0, x1 = x_bins[ix], x_bins[ix + 1]
+            y0, y1 = y_bins[iy], y_bins[iy + 1]
+            ax.add_patch(
+                Rectangle(
+                    (x0, y0), x1 - x0, y1 - y0,
+                    facecolor=CMAP_PASS_DEST(norm(value)),
+                    edgecolor=(1, 1, 1, 0.12),
+                    linewidth=0.25,
+                    alpha=0.94,
+                    zorder=2,
+                )
+            )
+
+    pitch.draw(ax=ax)
+    if compare:
+        title_size = 8.0 * scale
+        title_pad = 6
+    elif tiny:
+        title_size = 6.2 * scale
+        title_pad = 2
+    elif mini:
+        title_size = 7.0 * scale
+        title_pad = 4
+    else:
+        title_size = 8.2 * scale
+        title_pad = 5
+    short_name = player_name.split()[0] if tiny and player_name and not compare else player_name
+    action_kind = "passes + carries" if completed_only else "all actions"
+    if compare:
+        title = f"{player_name}\nOrigin · {action_kind} · {cols}×{rows}"
+    elif tiny:
+        title = f"{short_name}\nOrigin · {action_kind}"
+    else:
+        title = f"{player_name}\nOrigin · {action_kind} · {cols}×{rows} · {match_label}"
+    ax.set_title(title, color="white", fontsize=title_size, pad=title_pad)
+    if not mini and not tiny and not compare:
+        _attack_arrow(fig, fig_w=fig_w)
+    return fig
+
+
 def draw_xt_surface_heatmap(
     *,
     cols: int = XT_HEATMAP_COLS_DEFAULT,

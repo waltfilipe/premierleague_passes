@@ -14,10 +14,11 @@ ORIGIN_GRID_ROWS = 6
 ORIGIN_ANALYSIS_COLS = 12
 ORIGIN_ANALYSIS_ROWS = 8
 MIN_PASSES_ORIGIN = 50
+MIN_ACTIONS_ORIGIN = MIN_PASSES_ORIGIN
 ORIGIN_PREFILTER_TOP_N = 50
 
-# Option A — percentile profile (dashboard metric groups only).
-SIMILARITY_METRICS_A: tuple[str, ...] = (
+# Option A — percentile profile (pass + carry metric groups).
+SIMILARITY_PASS_METRICS: tuple[str, ...] = (
     "impact_passes_p90",
     "phi_p90",
     "dxt_p90",
@@ -33,6 +34,28 @@ SIMILARITY_METRICS_A: tuple[str, ...] = (
     "aggression_aip_per_pass",
 )
 
+CARRY_METRIC_SOURCES: tuple[str, ...] = (
+    "impact_passes_p90",
+    "phi_p90",
+    "dxt_p90",
+    "dxt_per_pass",
+    "dxt_gt_015_pct",
+    "carries_to_box_p90",
+    "carries_impact_to_box_p90",
+    "dribbles_final_third_p90",
+)
+
+
+def carry_metric_key(source_key: str) -> str:
+    return f"carry_{source_key}"
+
+
+SIMILARITY_CARRY_METRICS: tuple[str, ...] = tuple(
+    carry_metric_key(key) for key in CARRY_METRIC_SOURCES
+)
+
+SIMILARITY_METRICS_A: tuple[str, ...] = SIMILARITY_PASS_METRICS + SIMILARITY_CARRY_METRICS
+
 SIMILARITY_COMPARE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Passing Threat (Per Game)", ("impact_passes_p90", "phi_p90", "dxt_p90")),
     (
@@ -42,6 +65,21 @@ SIMILARITY_COMPARE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Long Balls", ("long_impact_passes", "long_impact_per_long_pass")),
     ("Build-Up", ("construction_aip", "construction_aip_per_pass")),
     ("Attacking Zone", ("aggression_aip", "aggression_aip_per_pass")),
+    (
+        "Carrying Threat (Per Game)",
+        tuple(carry_metric_key(k) for k in ("impact_passes_p90", "phi_p90", "dxt_p90")),
+    ),
+    (
+        "Carry Effectiveness",
+        tuple(carry_metric_key(k) for k in ("dxt_per_pass", "dxt_gt_015_pct")),
+    ),
+    (
+        "Final Third Threat (Per Game)",
+        tuple(
+            carry_metric_key(k)
+            for k in ("carries_to_box_p90", "carries_impact_to_box_p90", "dribbles_final_third_p90")
+        ),
+    ),
 )
 
 # Option C — z-score distance (higher weight on core impact volume).
@@ -60,6 +98,38 @@ SIMILARITY_WEIGHTS_C: dict[str, float] = {
     "construction_aip_per_pass": 1.0,
     "aggression_aip": 1.0,
     "aggression_aip_per_pass": 1.0,
+    carry_metric_key("impact_passes_p90"): 2.0,
+    carry_metric_key("phi_p90"): 2.0,
+    carry_metric_key("dxt_p90"): 2.0,
+    carry_metric_key("dxt_per_pass"): 1.5,
+    carry_metric_key("dxt_gt_015_pct"): 1.5,
+    carry_metric_key("carries_to_box_p90"): 1.0,
+    carry_metric_key("carries_impact_to_box_p90"): 1.0,
+    carry_metric_key("dribbles_final_third_p90"): 1.0,
+}
+
+SIMILARITY_METRIC_LABELS: dict[str, str] = {
+    "impact_passes_p90": "Threat Passes",
+    "phi_p90": "High Threat Passes",
+    "dxt_p90": "Pass Threat",
+    "impact_per_pass": "Average Pass Threat",
+    "phi_per_pass": "Average High Threat Passes",
+    "positive_dxt_pct": "% Passes with Positive ΔxT",
+    "dxt_gt_01_pct": "% High Threat Passes",
+    "long_impact_passes": "Impact Long Balls",
+    "long_impact_per_long_pass": "Average Impact",
+    "construction_aip": "Build-Up Impact Passes",
+    "construction_aip_per_pass": "Build-Up Threat (Per pass)",
+    "aggression_aip": "Attacking Impact Passes",
+    "aggression_aip_per_pass": "Attacking Threat (Per pass)",
+    carry_metric_key("impact_passes_p90"): "Threat Carries",
+    carry_metric_key("phi_p90"): "High-Threat Carries",
+    carry_metric_key("dxt_p90"): "Carry Threat",
+    carry_metric_key("dxt_per_pass"): "Average Carry Threat",
+    carry_metric_key("dxt_gt_015_pct"): "% High-Threat Carries",
+    carry_metric_key("carries_to_box_p90"): "Box Entries",
+    carry_metric_key("carries_impact_to_box_p90"): "Threat Box Entries",
+    carry_metric_key("dribbles_final_third_p90"): "Successful Dribbles",
 }
 
 from heuristic_scoring import COMPARISON_GROUP_LABELS, comparison_position_group
@@ -67,6 +137,34 @@ from heuristic_scoring import COMPARISON_GROUP_LABELS, comparison_position_group
 TOP_K_DEFAULT = 10
 MIN_PASSES_SERIE_A = 100
 EXCLUDED_SEARCH_POSITIONS = frozenset({"GK", "—"})
+
+
+def similarity_metric_label(key: str) -> str:
+    return SIMILARITY_METRIC_LABELS.get(key, key.replace("_", " ").title())
+
+
+def merge_carry_metrics(player: dict, carry_player: dict | None) -> dict:
+    """Attach carry metrics to a pass player dict using carry_ prefixed keys."""
+    merged = dict(player)
+    if not carry_player:
+        return merged
+    for source_key in CARRY_METRIC_SOURCES:
+        value = carry_player.get(source_key)
+        if value is not None:
+            merged[carry_metric_key(source_key)] = value
+    if carry_player.get("carries_total") is not None:
+        merged["carries_total"] = carry_player["carries_total"]
+    return merged
+
+
+def enrich_players_with_carry_metrics(
+    players: list[dict],
+    carry_by_id: dict[str, dict],
+) -> list[dict]:
+    return [
+        merge_carry_metrics(dict(player), carry_by_id.get(str(player["player_id"])))
+        for player in players
+    ]
 
 
 def _metric_vector(player: dict, keys: tuple[str, ...]) -> np.ndarray:
@@ -220,16 +318,81 @@ def _completed_pass_count(passes: pd.DataFrame | None) -> int:
     return int(len(passes))
 
 
+def _completed_carry_count(carries: pd.DataFrame | None) -> int:
+    if carries is None or carries.empty:
+        return 0
+    work = carries
+    if "is_dribble" in work.columns:
+        work = work[~work["is_dribble"].astype(bool)]
+    if work.empty:
+        return 0
+    if "has_end" in work.columns:
+        work = work[work["has_end"].astype(bool)]
+    return int(len(work))
+
+
+def _completed_action_count(
+    passes: pd.DataFrame | None,
+    carries: pd.DataFrame | None = None,
+) -> int:
+    return _completed_pass_count(passes) + _completed_carry_count(carries)
+
+
+def carry_origin_profile(
+    carries: pd.DataFrame | None,
+    *,
+    cols: int = ORIGIN_GRID_COLS,
+    rows: int = ORIGIN_GRID_ROWS,
+) -> np.ndarray | None:
+    """Normalized histogram of ball-carry start locations (excludes dribbles)."""
+    if carries is None or carries.empty:
+        return None
+    work = carries
+    if "is_dribble" in work.columns:
+        work = work[~work["is_dribble"].astype(bool)]
+    if work.empty:
+        return None
+    return pass_origin_profile(work, cols=cols, rows=rows, completed_only=False)
+
+
+def action_origin_profile(
+    passes: pd.DataFrame | None,
+    carries: pd.DataFrame | None = None,
+    *,
+    cols: int = ORIGIN_GRID_COLS,
+    rows: int = ORIGIN_GRID_ROWS,
+    completed_only: bool = True,
+) -> np.ndarray | None:
+    """Blend pass-origin and carry-origin profiles weighted by action volume."""
+    pass_prof = pass_origin_profile(passes, cols=cols, rows=rows, completed_only=completed_only)
+    carry_prof = carry_origin_profile(carries, cols=cols, rows=rows)
+    if pass_prof is None and carry_prof is None:
+        return None
+    if pass_prof is None:
+        return carry_prof
+    if carry_prof is None:
+        return pass_prof
+    pass_n = _completed_pass_count(passes) if completed_only else int(len(passes or []))
+    carry_n = _completed_carry_count(carries)
+    total = pass_n + carry_n
+    if total <= 0:
+        return (pass_prof + carry_prof) / 2.0
+    return (pass_prof * pass_n + carry_prof * carry_n) / total
+
+
 def find_similar_option_origin(
     target_passes: pd.DataFrame | None,
     pool: list[dict],
     passes_by_id: dict[str, pd.DataFrame],
     *,
+    target_carries: pd.DataFrame | None = None,
+    carries_by_id: dict[str, pd.DataFrame] | None = None,
     top_k: int = TOP_K_DEFAULT,
     min_passes: int = MIN_PASSES_ORIGIN,
 ) -> list[dict[str, Any]]:
-    """Cosine similarity of normalized pass-origin grids (all completed passes)."""
-    target_profile = pass_origin_profile(target_passes)
+    """Cosine similarity of normalized pass+carry origin grids."""
+    carries_by_id = carries_by_id or {}
+    target_profile = action_origin_profile(target_passes, target_carries)
     if target_profile is None:
         return []
 
@@ -237,9 +400,10 @@ def find_similar_option_origin(
     for cand in pool:
         pid = str(cand["player_id"])
         passes = passes_by_id.get(pid)
-        if _completed_pass_count(passes) < min_passes:
+        carries = carries_by_id.get(pid)
+        if _completed_action_count(passes, carries) < min_passes:
             continue
-        profile = pass_origin_profile(passes)
+        profile = action_origin_profile(passes, carries)
         if profile is None:
             continue
         sim = _cosine_similarity_pct(target_profile, profile)
@@ -259,12 +423,15 @@ def find_similar_origin_then_percentile(
     full_pool: list[dict],
     passes_by_id: dict[str, pd.DataFrame],
     *,
+    target_carries: pd.DataFrame | None = None,
+    carries_by_id: dict[str, pd.DataFrame] | None = None,
     origin_prefilter_n: int = ORIGIN_PREFILTER_TOP_N,
     top_k: int = TOP_K_DEFAULT,
     min_passes: int = MIN_PASSES_ORIGIN,
 ) -> list[dict[str, Any]]:
-    """Two-step: (1) closest pass-origin profiles, then (2) percentile metric similarity."""
-    target_profile = pass_origin_profile(target_passes)
+    """Two-step: (1) closest action-origin profiles, then (2) percentile metric similarity."""
+    carries_by_id = carries_by_id or {}
+    target_profile = action_origin_profile(target_passes, target_carries)
     if target_profile is None:
         return []
 
@@ -272,9 +439,10 @@ def find_similar_origin_then_percentile(
     for cand in full_pool:
         pid = str(cand["player_id"])
         passes = passes_by_id.get(pid)
-        if _completed_pass_count(passes) < min_passes:
+        carries = carries_by_id.get(pid)
+        if _completed_action_count(passes, carries) < min_passes:
             continue
-        profile = pass_origin_profile(passes)
+        profile = action_origin_profile(passes, carries)
         if profile is None:
             continue
         origin_sim = _cosine_similarity_pct(target_profile, profile)
@@ -342,12 +510,41 @@ def attach_pass_origin_similarity(
     target_passes: pd.DataFrame | None,
     passes_by_id: dict[str, pd.DataFrame],
     *,
+    target_carries: pd.DataFrame | None = None,
+    carries_by_id: dict[str, pd.DataFrame] | None = None,
     cols: int = ORIGIN_ANALYSIS_COLS,
     rows: int = ORIGIN_ANALYSIS_ROWS,
-    min_passes: int = MIN_PASSES_ORIGIN,
+    min_passes: int = MIN_ACTIONS_ORIGIN,
 ) -> list[dict[str, Any]]:
-    """Annotate z-score (or other) results with pass-origin cosine similarity (12×8 default)."""
-    target_profile = pass_origin_profile(target_passes, cols=cols, rows=rows)
+    """Annotate results with pass+carry origin cosine similarity (12×8 default)."""
+    return attach_action_origin_similarity(
+        results,
+        target_passes,
+        passes_by_id,
+        target_carries=target_carries,
+        carries_by_id=carries_by_id,
+        cols=cols,
+        rows=rows,
+        min_actions=min_passes,
+    )
+
+
+def attach_action_origin_similarity(
+    results: list[dict],
+    target_passes: pd.DataFrame | None,
+    passes_by_id: dict[str, pd.DataFrame],
+    *,
+    target_carries: pd.DataFrame | None = None,
+    carries_by_id: dict[str, pd.DataFrame] | None = None,
+    cols: int = ORIGIN_ANALYSIS_COLS,
+    rows: int = ORIGIN_ANALYSIS_ROWS,
+    min_actions: int = MIN_ACTIONS_ORIGIN,
+) -> list[dict[str, Any]]:
+    """Annotate z-score results with blended pass+carry origin similarity."""
+    carries_by_id = carries_by_id or {}
+    target_profile = action_origin_profile(
+        target_passes, target_carries, cols=cols, rows=rows,
+    )
     if target_profile is None:
         return [{**row, "origin_similarity_pct": None} for row in results]
 
@@ -355,10 +552,11 @@ def attach_pass_origin_similarity(
     for row in results:
         pid = str(row["player_id"])
         passes = passes_by_id.get(pid)
-        if _completed_pass_count(passes) < min_passes:
+        carries = carries_by_id.get(pid)
+        if _completed_action_count(passes, carries) < min_actions:
             enriched.append({**row, "origin_similarity_pct": None})
             continue
-        profile = pass_origin_profile(passes, cols=cols, rows=rows)
+        profile = action_origin_profile(passes, carries, cols=cols, rows=rows)
         if profile is None:
             enriched.append({**row, "origin_similarity_pct": None})
             continue

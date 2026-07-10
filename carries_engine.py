@@ -32,6 +32,7 @@ except ImportError:
 
 # ── Paths & eligibility ─────────────────────────────────────────────────────
 SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles.csv"
+SEASON_SERIEA_CARRY_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles_seriea.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
 DATA_CACHE_VERSION = 1
 
@@ -708,6 +709,21 @@ def _load_season_carry_frame() -> pd.DataFrame:
     frame = pd.read_csv(SEASON_ALL_CSV_PATH, low_memory=False)
     frame = frame[frame["category"].astype(str).str.lower().isin(CARRY_CATEGORIES)]
     return resolve_positions_in_csv_frame(frame)
+
+
+def _load_serie_a_carry_frame() -> pd.DataFrame:
+    if not SEASON_SERIEA_CARRY_CSV_PATH.exists():
+        return pd.DataFrame()
+    frame = pd.read_csv(SEASON_SERIEA_CARRY_CSV_PATH, low_memory=False)
+    frame = frame[frame["category"].astype(str).str.lower().isin(CARRY_CATEGORIES)]
+    return resolve_positions_in_csv_frame(frame)
+
+
+def _br_position_group(raw: str | None) -> str | None:
+    text = str(raw or "").strip().upper()
+    if text == "GK" or not text:
+        return None
+    return rating_position_group(_normalize_position(text))
 
 
 def _load_season_pass_frame() -> pd.DataFrame:
@@ -1823,6 +1839,73 @@ def load_dribbles_grouped(
     actions = _enrich_passes(frame)
     dribbles = actions[actions["is_dribble"]]
     return {str(pid): grp for pid, grp in dribbles.groupby("player_id", sort=False)}
+
+
+def build_serie_a_carry_players(
+    cache_version: int = DATA_CACHE_VERSION,
+    impact_model: str = IMPACT_MODEL_DEFAULT,
+    *,
+    min_carries: int = 50,
+) -> list[dict]:
+    """Carry & dribble metrics for Série A (season_carries_dribbles_seriea.csv)."""
+    _ = cache_version
+    impact_model = normalize_impact_model(impact_model)
+    frame = _load_serie_a_carry_frame()
+    if frame.empty:
+        return []
+
+    frame = frame.copy()
+    frame["player_id"] = frame["player_id"].astype(str)
+    if "position" in frame.columns:
+        frame["position"] = frame["position"].astype(str).str.strip().str.upper()
+
+    actions = _enrich_passes(frame, impact_model=impact_model)
+    minutes_info = _load_minutes_info(frame)
+    registry = build_player_registry(frame)
+
+    players: list[dict] = []
+    for player in registry:
+        grp = _br_position_group(player.get("position"))
+        if grp is None:
+            continue
+        pid = player["code"]
+        carries = actions[(actions["player_id"] == pid) & (~actions["is_dribble"])]
+        if len(carries) < min_carries:
+            continue
+        mins = minutes_info.get(pid, {})
+        metrics = compute_player_metrics(carries, mins)
+        players.append({
+            "player_id": pid,
+            "player_name": player["name"],
+            "position": player.get("position", "—"),
+            "position_group": grp,
+            "team": mins.get("team", "—"),
+            "minutes": mins.get("minutes"),
+            "minutes_pct": mins.get("minutes_pct"),
+            "league": "Série A",
+            "carries_total": metrics.get("carries_total", metrics.get("passes_completed", 0)),
+            **{
+                k: round(v, 4) if isinstance(v, float) and abs(v) < 1000 else v
+                for k, v in metrics.items()
+            },
+        })
+    return players
+
+
+@functools.lru_cache(maxsize=8)
+def load_serie_a_carries_grouped(
+    cache_version: int = DATA_CACHE_VERSION,
+    impact_model: str = IMPACT_MODEL_DEFAULT,
+) -> dict[str, pd.DataFrame]:
+    """Enriched Série A ball-carries indexed by player_id (for origin similarity)."""
+    _ = cache_version
+    impact_model = normalize_impact_model(impact_model)
+    frame = _load_serie_a_carry_frame()
+    if frame.empty:
+        return {}
+    actions = _enrich_passes(frame, impact_model=impact_model)
+    carries = actions[~actions["is_dribble"]]
+    return {str(pid): grp for pid, grp in carries.groupby("player_id", sort=False)}
 
 
 def build_analytics(
