@@ -12,7 +12,7 @@ import passes_engine as pe
 from heuristic_scoring import POSITION_GROUPS_ORDER
 
 DATA_CACHE_VERSION = max(pe.DATA_CACHE_VERSION, ce.DATA_CACHE_VERSION)
-DUAL_ELITE_PERCENTILE = 75.0
+DUAL_ELITE_PERCENTILE = 90.0
 
 CARRY_METRIC_KEYS: tuple[str, ...] = tuple(
     dict.fromkeys(
@@ -29,18 +29,20 @@ CARRY_METRIC_KEYS: tuple[str, ...] = tuple(
     )
 )
 
-COMBINED_RATING_DIMENSIONS: tuple[tuple[str, str | None, str], ...] = tuple(
+COMBINED_RATING_DIMENSIONS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = tuple(
     pe.RATING_DIMENSIONS
 ) + tuple(
-    (f"carry_{dim}", f"carry_{vol}" if vol else None, f"carry_{eff}")
-    for dim, vol, eff in ce.RATING_DIMENSIONS
+    (
+        f"carry_{dim}",
+        tuple((f"carry_{key}", weight) for key, weight in components),
+    )
+    for dim, components in ce.RATING_DIMENSIONS
 )
 
 COMBINED_RATING_METRIC_KEYS: tuple[str, ...] = tuple(
-    key
-    for _, volume_key, efficiency_key in COMBINED_RATING_DIMENSIONS
-    for key in ((volume_key, efficiency_key) if volume_key else (efficiency_key,))
-    if key is not None
+    dict.fromkeys(
+        key for _, components in COMBINED_RATING_DIMENSIONS for key, _ in components
+    )
 )
 
 COMBINED_SECTION_RATING_GROUPS: dict[str, tuple[str, ...]] = {
@@ -272,53 +274,25 @@ def _attach_source_ratings(
     return enriched
 
 
-def _dual_elite_threshold(values: list[float], percentile: float = DUAL_ELITE_PERCENTILE) -> float:
-    clean = [float(v) for v in values if v is not None]
-    if not clean:
-        return 0.0
-    return float(np.percentile(clean, percentile))
-
-
 def attach_dual_elite_badges(
     players: list[dict],
     *,
     pass_by_id: dict[str, dict],
     carry_by_id: dict[str, dict],
 ) -> list[dict]:
-    by_group: dict[str, list[dict]] = {}
-    for player in players:
-        by_group.setdefault(str(player.get("position_group") or "—"), []).append(player)
-
-    thresholds: dict[str, tuple[float, float]] = {}
-    for group, group_players in by_group.items():
-        pass_values = [
-            float(pass_by_id[str(p["player_id"])].get("pass_rating") or 0)
-            for p in group_players
-            if str(p["player_id"]) in pass_by_id and pass_by_id[str(p["player_id"])].get("pass_rating") is not None
-        ]
-        carry_values = [
-            float(carry_by_id[str(p["player_id"])].get("pass_rating") or 0)
-            for p in group_players
-            if str(p["player_id"]) in carry_by_id and carry_by_id[str(p["player_id"])].get("pass_rating") is not None
-        ]
-        thresholds[group] = (
-            _dual_elite_threshold(pass_values),
-            _dual_elite_threshold(carry_values),
-        )
-
+    """Elite in both = top quartile in pass AND carry rating within position group."""
     enriched: list[dict] = []
     for player in players:
-        group = str(player.get("position_group") or "—")
-        pass_threshold, carry_threshold = thresholds.get(group, (0.0, 0.0))
-        pass_rating = player.get("pass_rating")
-        carry_rating = player.get("carry_rating")
+        pid = str(player["player_id"])
+        pass_player = pass_by_id.get(pid, {})
+        carry_player = carry_by_id.get(pid, {})
+        pass_pct = pass_player.get("rating_percentile")
+        carry_pct = carry_player.get("rating_percentile")
         dual_elite = (
-            pass_rating is not None
-            and carry_rating is not None
-            and float(pass_rating) >= pass_threshold
-            and float(carry_rating) >= carry_threshold
-            and pass_threshold > 0
-            and carry_threshold > 0
+            pass_pct is not None
+            and carry_pct is not None
+            and float(pass_pct) >= DUAL_ELITE_PERCENTILE / 100.0
+            and float(carry_pct) >= DUAL_ELITE_PERCENTILE / 100.0
         )
         enriched.append({
             **player,

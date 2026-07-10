@@ -34,7 +34,7 @@ except ImportError:
 SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles.csv"
 SEASON_SERIEA_CARRY_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles_seriea.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 1
+DATA_CACHE_VERSION = 2
 
 CARRY_CATEGORIES = frozenset({"ball-carries", "dribbles"})
 
@@ -151,19 +151,41 @@ RANKING_METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 
-RATING_DIMENSIONS: tuple[tuple[str, str | None, str], ...] = (
-    ("impact", "impact_passes_p90", "dxt_per_pass"),
-    ("phi", "phi_p90", "dxt_gt_015_pct"),
-    ("dxt", None, "dxt_p90"),
-    ("box", "carries_to_box_p90", "carries_impact_to_box_p90"),
-    ("dribble", None, "dribbles_final_third_p90"),
+RATING_DIMENSIONS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = (
+    (
+        "impact",
+        (
+            ("impact_passes_p90", RATING_VOLUME_WEIGHT),
+            ("dxt_per_pass", RATING_EFFICIENCY_WEIGHT),
+        ),
+    ),
+    (
+        "phi",
+        (
+            ("phi_p90", RATING_VOLUME_WEIGHT),
+            ("dxt_gt_015_pct", RATING_EFFICIENCY_WEIGHT),
+        ),
+    ),
+    (
+        "dxt",
+        (
+            ("dxt_p90", RATING_VOLUME_WEIGHT),
+            ("positive_dxt_pct", RATING_EFFICIENCY_WEIGHT),
+        ),
+    ),
+    (
+        "decisive",
+        (
+            ("dxt_gt_015_pct", 0.6),
+            ("carries_impact_to_box_p90", 0.4),
+        ),
+    ),
 )
 
 RATING_METRIC_KEYS: tuple[str, ...] = tuple(
-    key
-    for _, volume_key, efficiency_key in RATING_DIMENSIONS
-    for key in ((volume_key, efficiency_key) if volume_key else (efficiency_key,))
-    if key is not None
+    dict.fromkeys(
+        key for _, components in RATING_DIMENSIONS for key, _ in components
+    )
 )
 
 METRIC_LABELS: dict[str, str] = {
@@ -173,6 +195,7 @@ METRIC_LABELS: dict[str, str] = {
     "dxt_p90": "Carry Threat",
     "dxt_per_pass": "Average Carry Threat",
     "dxt_gt_015_pct": "% High-Threat Carries",
+    "positive_dxt_pct": "% Carries with Positive ΔxT",
     "carries_to_box_p90": "Box Entries",
     "carries_impact_to_box_p90": "Threat Box Entries",
     "dribbles_final_third_p90": "Successful Dribbles",
@@ -213,6 +236,7 @@ ABSOLUTE_METRIC_KEYS: tuple[str, ...] = (
 RELATIVE_METRIC_KEYS: tuple[str, ...] = (
     "dxt_per_pass",
     "dxt_gt_015_pct",
+    "positive_dxt_pct",
 )
 
 GENERAL_CARRIES_DRIBBLES_METRIC_KEYS: tuple[str, ...] = (
@@ -943,6 +967,7 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
     dxt_gt_015_pct = float(
         (xt["delta_xt_v4"] > DXT_GT_PCT_THRESHOLD).mean() * 100.0
     ) if len(xt) else 0.0
+    positive_dxt_pct = float((xt["delta_xt_v4"] > 0).mean() * 100.0) if len(xt) else 0.0
 
     progressive_passes = int(passes["prog_success"].sum())
     box_mask = _ended_in_penalty_box(passes)
@@ -967,6 +992,7 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
         "sum_dxt_passes": float(passes["delta_xt_v4"].sum()),
         "sum_xt_end_passes": float(completed["xt_end_v4"].sum()) if not completed.empty else 0.0,
         "dxt_gt_015_pct": round(dxt_gt_015_pct, 1),
+        "positive_dxt_pct": round(positive_dxt_pct, 1),
         "impact_per_pass": _safe_ratio(impact["successful"], total),
         "dxt_per_pass": _safe_ratio(float(passes["delta_xt_v4"].sum()), int(len(completed))),
         "carries_to_box": carries_to_box,
@@ -1104,15 +1130,13 @@ def _dimension_rating_score(
     pool: list[dict],
     shrunk_values: dict[str, dict[str, float]],
     player: dict,
-    volume_key: str | None,
-    efficiency_key: str,
+    components: tuple[tuple[str, float], ...],
     pool_size: int,
 ) -> float:
-    if volume_key is None:
-        return _metric_rating_score(pool, shrunk_values, player, efficiency_key, pool_size)
-    volume_score = _metric_rating_score(pool, shrunk_values, player, volume_key, pool_size)
-    efficiency_score = _metric_rating_score(pool, shrunk_values, player, efficiency_key, pool_size)
-    return RATING_VOLUME_WEIGHT * volume_score + RATING_EFFICIENCY_WEIGHT * efficiency_score
+    return sum(
+        weight * _metric_rating_score(pool, shrunk_values, player, key, pool_size)
+        for key, weight in components
+    )
 
 
 def _pass_rating_from_dimensions(
@@ -1122,8 +1146,8 @@ def _pass_rating_from_dimensions(
     pool_size: int,
 ) -> float:
     scores = [
-        _dimension_rating_score(pool, shrunk_values, player, volume_key, efficiency_key, pool_size)
-        for _, volume_key, efficiency_key in RATING_DIMENSIONS
+        _dimension_rating_score(pool, shrunk_values, player, components, pool_size)
+        for _, components in RATING_DIMENSIONS
     ]
     return round(sum(scores) / len(scores), 4) if scores else RATING_SCORE_MID
 
@@ -1160,14 +1184,12 @@ def _shrunk_metric_matrix(
 def _dimension_z_matrix(metric_z: np.ndarray) -> np.ndarray:
     key_idx = {key: i for i, key in enumerate(RATING_METRIC_KEYS)}
     dim_cols: list[np.ndarray] = []
-    for _, volume_key, efficiency_key in RATING_DIMENSIONS:
-        if volume_key is None:
-            dim_cols.append(metric_z[:, key_idx[efficiency_key]])
-        else:
-            dim_cols.append(
-                RATING_VOLUME_WEIGHT * metric_z[:, key_idx[volume_key]]
-                + RATING_EFFICIENCY_WEIGHT * metric_z[:, key_idx[efficiency_key]]
-            )
+    for _, components in RATING_DIMENSIONS:
+        col = sum(
+            weight * metric_z[:, key_idx[key]]
+            for key, weight in components
+        )
+        dim_cols.append(col)
     return np.stack(dim_cols, axis=1)
 
 
