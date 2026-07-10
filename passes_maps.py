@@ -110,7 +110,7 @@ def _attack_arrow(fig, *, fig_w: float, has_cbar: bool = False, dashboard: bool 
     fig.text(
         0.50 + ox,
         y_label,
-        "Direção de Ataque",
+        "Direction of Attack",
         ha="center",
         va="bottom",
         transform=fig.transFigure,
@@ -142,10 +142,10 @@ def _delicate_arrows(pitch, ax, x1, y1, x2, y2, color, scale: float, *, alpha: f
     )
 
 
-DASHBOARD_TITLE_COMPLETED = "Passes completos\nCirculação com a bola"
-DASHBOARD_TITLE_DEST_COMPLETED = "Destino dos completos\nOnde os passes chegam"
-DASHBOARD_TITLE_IMPACT = "Passes de impacto\nMudança relevante de xT"
-DASHBOARD_TITLE_DEST_IMPACT = "Destino do impacto\nZonas de penetração"
+DASHBOARD_TITLE_COMPLETED = "Completed passes\nBall circulation"
+DASHBOARD_TITLE_DEST_COMPLETED = "Completed destinations\nWhere passes arrive"
+DASHBOARD_TITLE_IMPACT = "Threat passes\nMeaningful xT change"
+DASHBOARD_TITLE_DEST_IMPACT = "Threat destinations\nPenetration zones"
 COLOR_ALL_PASSES = "#64748b"
 COLOR_ALL_PASSES_END = "#94a3b8"
 ALL_PASS_ARROW_ALPHA = 0.22
@@ -155,7 +155,7 @@ ALL_PASS_MARKER_SIZE = 4
 def draw_all_completed_passes_map(
     passes,
     player_name: str,
-    match_label: str = "todos os jogos",
+    match_label: str = "all matches",
     *,
     compact: bool = True,
     dashboard: bool = False,
@@ -182,7 +182,7 @@ def draw_all_completed_passes_map(
             without_end = subset.iloc[0:0]
 
     if subset is None or subset.empty:
-        ax.text(60, 40, "Sem passes completos", ha="center", va="center", color="white", fontsize=9)
+        ax.text(60, 40, "No completed passes", ha="center", va="center", color="white", fontsize=9)
     else:
         if not with_end.empty:
             for row in with_end.itertuples(index=False):
@@ -206,15 +206,15 @@ def draw_all_completed_passes_map(
         )
 
     legend_handles = [
-        Line2D([0], [0], color=COLOR_ALL_PASSES, lw=1.2 * scale, label="Passe completo", alpha=0.45),
+        Line2D([0], [0], color=COLOR_ALL_PASSES, lw=1.2 * scale, label="Completed pass", alpha=0.45),
         Line2D(
             [0], [0], marker="o", color="w", markerfacecolor=COLOR_ALL_PASSES_END,
-            markersize=4, linestyle="None", label="Origem",
+            markersize=4, linestyle="None", label="Origin",
         ),
     ]
     _add_map_legend(ax, legend_handles, fig_w=fig_w)
     ax.set_title(
-        DASHBOARD_TITLE_COMPLETED if dashboard else f"{player_name}\nPasses completos · {match_label}",
+        DASHBOARD_TITLE_COMPLETED if dashboard else f"{player_name}\nCompleted passes · {match_label}",
         color="white", fontsize=7.6 * scale if dashboard else 8.4 * scale, pad=4 if dashboard else 5,
     )
     if dashboard:
@@ -227,7 +227,7 @@ def draw_all_completed_passes_map(
 def draw_impact_pass_map(
     passes,
     player_name: str,
-    match_label: str = "todos os jogos",
+    match_label: str = "all matches",
     *,
     compact: bool = True,
     dashboard: bool = False,
@@ -244,7 +244,7 @@ def draw_impact_pass_map(
     fig, ax, pitch = _base_pitch(figsize=figsize, dpi=dpi)
 
     if subset.empty:
-        ax.text(60, 40, "Sem passes de impact", ha="center", va="center", color="white", fontsize=9)
+        ax.text(60, 40, "No threat passes", ha="center", va="center", color="white", fontsize=9)
     else:
         for row in subset.itertuples(index=False):
             is_high = bool(row.high_impact_success)
@@ -268,7 +268,7 @@ def draw_impact_pass_map(
         Line2D([0], [0], color=COLOR_PROGRESSIVE, lw=1.4 * scale, label="Impact", alpha=0.80),
         Line2D([0], [0], color=COLOR_HIGHLY_PROGRESSIVE, lw=1.4 * scale, label="High Impact", alpha=0.85),
         Line2D([0], [0], marker="o", color="w", markerfacecolor=COLOR_PROGRESSIVE,
-               markersize=4, linestyle="None", label="Origem do passe"),
+               markersize=4, linestyle="None", label="Pass origin"),
     ]
     _add_map_legend(ax, legend_handles, fig_w=fig_w)
     ax.set_title(
@@ -285,7 +285,7 @@ def draw_impact_pass_map(
 def draw_pass_destination_heatmap(
     passes,
     player_name: str,
-    match_label: str = "todos os jogos",
+    match_label: str = "all matches",
     *,
     impact_only: bool = True,
     compact: bool = True,
@@ -354,7 +354,7 @@ def draw_pass_destination_heatmap(
         ax.set_title(title, color="white", fontsize=7.6 * scale, pad=4)
         _attack_arrow(fig, fig_w=fig_w)
     else:
-        dest_kind = "passes impact" if impact_only else "passes completos"
+        dest_kind = "threat passes" if impact_only else "completed passes"
         ax.set_title(
             f"{player_name}\nDestino — {dest_kind} · {PASS_DEST_HEATMAP_COLS}×{PASS_DEST_HEATMAP_ROWS} · {match_label}",
             color="white", fontsize=8.2 * scale, pad=5,
@@ -366,7 +366,7 @@ def draw_pass_destination_heatmap(
 def draw_pass_origin_heatmap(
     passes,
     player_name: str,
-    match_label: str = "todos os jogos",
+    match_label: str = "all matches",
     *,
     cols: int = 8,
     rows: int = 6,
@@ -449,7 +449,7 @@ def draw_pass_origin_heatmap(
         title_size = 8.2 * scale
         title_pad = 5
     short_name = player_name.split()[0] if tiny and player_name and not compare else player_name
-    pass_kind = "completos" if completed_only else "todos"
+    pass_kind = "completed" if completed_only else "all"
     if compare:
         title = f"{player_name}\nOrigem · {pass_kind} · {cols}×{rows}"
     elif tiny:
@@ -487,7 +487,7 @@ def draw_xt_surface_heatmap(
 
     meta = pe.get_xt_surface_meta(xt_surface_mode)
     grid = pe.get_xt_quadrant_grid(cols, rows, xt_surface_mode=xt_surface_mode)
-    model_label = meta.get("model_label", "Heurístico v4 — Top 5 (último terço)")
+    model_label = meta.get("model_label", "Heuristic v4 — Top 5 (final third)")
 
     pitch = Pitch(pitch_type="statsbomb", pitch_color="#1a1a2e", line_color="#ffffff", line_alpha=0.95)
     fig, ax = pitch.draw(figsize=figsize)

@@ -56,7 +56,7 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 42
+DATA_CACHE_VERSION = 43
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
@@ -82,7 +82,7 @@ GOAL_X, GOAL_Y = 120.0, 40.0
 WYSCOUT_PITCH_SIZE = 100.0
 PASS_AGGRESSION_X_MIN = FIELD_X - 30.0
 LONG_PASS_MIN_DISTANCE_M = 30.0
-DXT_IMPACT_THRESHOLD = 0.1
+DXT_IMPACT_THRESHOLD = 0.15
 DEFAULT_PLAYER_POSITION = "CM"
 
 WYSCOUT_PROG_OWN_HALF = 30.0
@@ -127,7 +127,7 @@ RANKING_METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "impact_passes_p90", "impact_per_pass",
         "phi_p90", "phi_per_pass",
     )),
-    ("How much impact", ("dxt_p90", "dxt_per_pass")),
+    ("How much impact", ("dxt_p90", "positive_dxt_pct")),
     ("How often impact", ("dxt_gt_01_pct",)),
     ("Construction & aggression efficiency", (
         "construction_aip", "construction_aip_per_pass",
@@ -138,7 +138,7 @@ RANKING_METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 RATING_DIMENSIONS: tuple[tuple[str, str | None, str], ...] = (
     ("impact", "impact_passes_p90", "impact_per_pass"),
     ("phi", "phi_p90", "phi_per_pass"),
-    ("dxt", "dxt_p90", "dxt_per_pass"),
+    ("dxt", "dxt_p90", "positive_dxt_pct"),
     ("decisive", None, "dxt_gt_01_pct"),
     ("construction", "construction_aip", "construction_aip_per_pass"),
     ("aggression", "aggression_aip", "aggression_aip_per_pass"),
@@ -151,67 +151,65 @@ RATING_METRIC_KEYS: tuple[str, ...] = tuple(
 )
 
 METRIC_LABELS: dict[str, str] = {
-    "impact_passes_p90": "Passes Impact p90",
-    "impact_per_pass": "Passes Impact / Pass",
-    "phi_p90": "PHI p90",
-    "phi_per_pass": "PHI / Pass",
-    "dxt_p90": "ΔxT p90",
-    "dxt_per_pass": "ΔxT / Pass",
-    "dxt_gt_01_pct": "% passes ΔxT > 0.1",
-    "construction_aip": "Construction AIP",
-    "construction_aip_per_pass": "Construction AIP / Construction Passes",
-    "aggression_aip": "Aggression AIP",
-    "aggression_aip_per_pass": "Aggression AIP / Aggression Passes",
-    "progressive_passes_p90": "Passes Progressivos p90",
-    "progressive_passes": "Passes Progressivos",
-    "final_third_passes_p90": "Passes para Terço Final p90",
-    "final_third_passes": "Passes para Terço Final",
+    "impact_passes_p90": "Threat Passes p90",
+    "impact_per_pass": "Avg Pass Threat",
+    "phi_p90": "High Threat Passes p90",
+    "phi_per_pass": "Avg High Threat Passes",
+    "dxt_p90": "Pass Threat p90",
+    "positive_dxt_pct": "% Passes with Positive ΔxT",
+    "dxt_gt_01_pct": "% High Threat Passes",
+    "construction_aip": "Build-Up Impact Passes",
+    "construction_aip_per_pass": "Build-Up Threat / Pass",
+    "aggression_aip": "Attacking Impact Passes",
+    "aggression_aip_per_pass": "Attacking Threat / Pass",
+    "progressive_passes_p90": "Progressive Passes p90",
+    "progressive_passes": "Progressive Passes",
+    "final_third_passes_p90": "Final Third Passes p90",
+    "final_third_passes": "Final Third Passes",
     "key_passes": "Key Passes",
-    "long_balls": "Long Passes",
+    "long_balls": "Long Balls",
 }
 
 ANALYST_METRIC_LABELS: dict[str, str] = {
-    "impact_passes_p90": "Volume de impacto (p90)",
-    "phi_p90": "Alto impacto — volume (p90)",
-    "dxt_p90": "Ganho de xT (p90)",
-    "impact_per_pass": "Eficiência de impacto",
-    "phi_per_pass": "Eficiência de alto impacto",
-    "dxt_per_pass": "Ganho médio de xT por passe",
-    "dxt_gt_01_pct": "Passes decisivos (ΔxT > 0,1)",
-    "long_balls": "Bolas longas tentadas",
-    "long_impact_passes": "Bolas longas de impacto",
-    "long_impact_per_long_pass": "Impacto por bola longa",
-    "construction_aip": "Construção — volume de impacto",
-    "construction_aip_per_pass": "Construção — eficiência",
-    "aggression_aip": "Agressão — volume de impacto",
-    "aggression_aip_per_pass": "Agressão — eficiência",
-    "minutes": "Minutos em campo",
-    "passes_completed": "Passes completos",
-    "minutes_pct": "Minutos (% do líder da posição)",
-    "impact_passes": "Passes de impacto (total)",
-    "high_impact_passes": "Passes de alto impacto (total)",
+    "impact_passes_p90": "Threat Passes",
+    "phi_p90": "High Threat Passes",
+    "dxt_p90": "Pass Threat",
+    "impact_per_pass": "Average Pass Threat",
+    "phi_per_pass": "Average High Threat Passes",
+    "positive_dxt_pct": "% Passes with Positive ΔxT",
+    "dxt_gt_01_pct": "% High Threat Passes",
+    "long_impact_passes": "Impact Long Balls",
+    "long_impact_per_long_pass": "Average Impact",
+    "construction_aip": "Build-Up Impact Passes",
+    "construction_aip_per_pass": "Build-Up Threat (Per pass)",
+    "aggression_aip": "Attacking Impact Passes",
+    "aggression_aip_per_pass": "Attacking Threat (Per pass)",
+    "minutes": "Minutes played",
+    "passes_completed": "Completed passes",
+    "minutes_pct": "Minutes (% of position leader)",
+    "impact_passes": "Threat passes (total)",
+    "high_impact_passes": "High threat passes (total)",
 }
 
 METRIC_TOOLTIPS: dict[str, str] = {
-    "impact_passes_p90": "Quantos passes de impacto o jogador faz a cada 90 minutos.",
-    "phi_p90": "Passes de alto impacto (PHI) por 90 min — volume de ações que mudam o jogo.",
-    "dxt_p90": "Soma do ganho de expected threat (xT) dos passes, normalizada por 90 min.",
-    "impact_per_pass": "Proporção de passes completos classificados como de impacto.",
-    "phi_per_pass": "Proporção de passes classificados como alto impacto (PHI).",
-    "dxt_per_pass": "Ganho médio de xT em cada passe completado.",
-    "dxt_gt_01_pct": "Percentual de passes com ganho de xT acima de 0,1 (passes decisivos).",
-    "long_balls": "Total de bolas longas tentadas na amostra.",
-    "long_impact_passes": "Bolas longas que geraram impacto no modelo xT.",
-    "long_impact_per_long_pass": "Taxa de bolas longas que se tornam passes de impacto.",
-    "construction_aip": "Impacto acumulado em passes de construção (saída e meio).",
-    "construction_aip_per_pass": "Eficiência dos passes de construção.",
-    "aggression_aip": "Impacto em passes agressivos (último terço / penetração).",
-    "aggression_aip_per_pass": "Eficiência dos passes agressivos.",
-    "minutes": "Minutos jogados na temporada analisada.",
-    "passes_completed": "Total de passes completos.",
-    "minutes_pct": "Minutos do jogador em relação ao máximo da posição.",
-    "impact_passes": "Contagem total de passes de impacto.",
-    "high_impact_passes": "Contagem total de passes de alto impacto (PHI).",
+    "impact_passes_p90": "Threat passes per 90 minutes.",
+    "phi_p90": "High threat passes per 90 minutes.",
+    "dxt_p90": "Total expected threat gained from passes, per 90 minutes.",
+    "impact_per_pass": "Share of completed passes classified as threat passes.",
+    "phi_per_pass": "Share of passes classified as high threat.",
+    "positive_dxt_pct": "Share of passes with a positive change in expected threat (ΔxT > 0).",
+    "dxt_gt_01_pct": "Share of passes with ΔxT above 0.15 (high threat passes).",
+    "long_impact_passes": "Long balls that generated threat in the xT model.",
+    "long_impact_per_long_pass": "Share of long balls that become impact long balls.",
+    "construction_aip": "Accumulated threat on build-up passes (defensive and middle third).",
+    "construction_aip_per_pass": "Threat efficiency on build-up passes.",
+    "aggression_aip": "Threat on attacking-zone passes (final third / penetration).",
+    "aggression_aip_per_pass": "Threat efficiency on attacking-zone passes.",
+    "minutes": "Minutes played in the analyzed sample.",
+    "passes_completed": "Total completed passes.",
+    "minutes_pct": "Player minutes relative to the position leader.",
+    "impact_passes": "Total threat passes.",
+    "high_impact_passes": "Total high threat passes.",
 }
 
 TOOLTIP_EXTRA_KEYS: tuple[str, ...] = ("minutes", "passes_completed")
@@ -225,7 +223,7 @@ ABSOLUTE_METRIC_KEYS: tuple[str, ...] = (
 RELATIVE_METRIC_KEYS: tuple[str, ...] = (
     "impact_per_pass",
     "phi_per_pass",
-    "dxt_per_pass",
+    "positive_dxt_pct",
     "dxt_gt_01_pct",
 )
 
@@ -255,32 +253,32 @@ SECTION_RATING_GROUPS: dict[str, tuple[str, ...]] = {
 SCOUT_SECTION_SPECS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     (
         "metrics_absolute",
-        "Produção por 90 min",
-        "Quanto o jogador entrega em volume — impacto, alto impacto e ganho de xT.",
+        "Passing Threat (Per Game)",
+        "Per-90 volume: threat passes, high threat passes, and pass threat.",
         ABSOLUTE_METRIC_KEYS,
     ),
     (
         "metrics_relative",
-        "Eficiência por passe",
-        "Qualidade média de cada tentativa — taxas e frequência de passes decisivos.",
+        "Pass Effectivness",
+        "Per-pass quality: threat rates and share of high-threat actions.",
         RELATIVE_METRIC_KEYS,
     ),
     (
         "long_balls",
-        "Jogo vertical",
-        "Bolas longas: volume, impacto e conversão em passes perigosos.",
-        ("long_balls", *LONG_BALL_STAT_KEYS),
+        "Long Balls",
+        "Long-ball impact volume and conversion into threatening passes.",
+        LONG_BALL_STAT_KEYS,
     ),
     (
         "construction",
-        "Construção de jogo",
-        "Passes de saída e meio-campo que progridem a posse com segurança.",
+        "Build-Up",
+        "Passes in the defensive and middle third that progress possession safely.",
         CONSTRUCTION_METRIC_KEYS,
     ),
     (
         "aggression",
-        "Penetração ofensiva",
-        "Passes no último terço e ações que quebram linhas adversárias.",
+        "Attacking Zone",
+        "Passes in the final third and actions that break defensive lines.",
         AGGRESSION_METRIC_KEYS,
     ),
 )
@@ -294,13 +292,13 @@ RANK_DISPLAY_KEYS: tuple[str, ...] = (
 
 TOOLTIP_LABELS: dict[str, str] = {
     **METRIC_LABELS,
-    "minutes": "Minutos",
+    "minutes": "Minutes",
     "passes_completed": "Passes",
     "minutes_pct": "Min %",
-    "impact_passes": "Passes Impact",
-    "high_impact_passes": "Passes High Impact",
-    "long_impact_passes": "Long balls impact",
-    "long_impact_per_long_pass": "Long impact / long ball",
+    "impact_passes": "Threat Passes",
+    "high_impact_passes": "High Threat Passes",
+    "long_impact_passes": "Impact Long Balls",
+    "long_impact_per_long_pass": "Average Impact",
 }
 
 
@@ -996,6 +994,7 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
     high = _accuracy(passes["high_impact_attempt"], passes["high_impact_success"])
 
     dxt_gt_01_pct = float((xt["delta_xt_v4"] > DXT_IMPACT_THRESHOLD).mean() * 100.0) if len(xt) else 0.0
+    positive_dxt_pct = float((xt["delta_xt_v4"] > 0).mean() * 100.0) if len(xt) else 0.0
 
     construction = _zone_metrics(passes, True)
     aggression = _zone_metrics(passes, False)
@@ -1019,9 +1018,9 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
         "sum_dxt_passes": float(passes["delta_xt_v4"].sum()),
         "sum_xt_end_passes": float(completed["xt_end_v4"].sum()) if not completed.empty else 0.0,
         "dxt_gt_01_pct": round(dxt_gt_01_pct, 1),
+        "positive_dxt_pct": round(positive_dxt_pct, 1),
         "impact_per_pass": _safe_ratio(impact["successful"], total),
         "phi_per_pass": _safe_ratio(high["successful"], total),
-        "dxt_per_pass": _safe_ratio(float(passes["delta_xt_v4"].sum()), int(len(completed))),
         "construction_aip": int(construction_aip),
         "construction_aip_per_pass": _safe_ratio(construction_aip, construction["passes"]),
         "aggression_aip": int(aggression_aip),
@@ -1767,7 +1766,7 @@ def rank_in_group_label(rank: int, position_group: str | None) -> str:
     from heuristic_scoring import position_group_label
 
     group = position_group_label(position_group)
-    return f"{int(rank)}º em {group}"
+    return f"#{int(rank)} in {group}"
 
 
 def fmt_smart(value, *, max_decimals: int = 4) -> str:
@@ -1792,7 +1791,7 @@ def fmt_stat_value(key: str, value) -> str:
     fixed_decimals = {
         "impact_per_pass": 2,
         "phi_per_pass": 3,
-        "dxt_per_pass": 3,
+        "positive_dxt_pct": 1,
         "long_impact_per_long_pass": 2,
         "construction_aip_per_pass": 3,
         "aggression_aip_per_pass": 3,

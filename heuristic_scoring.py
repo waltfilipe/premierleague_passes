@@ -141,15 +141,15 @@ _RATING_POSITION_TO_GROUP: dict[str, str] = {
 _POSITION_TO_GROUP = dict(_RATING_POSITION_TO_GROUP)
 
 POSITION_GROUP_LABELS: dict[str, str] = {
-    "Zagueiros": "Zagueiro",
-    "Laterais-direitos": "Lateral direito",
-    "Laterais-esquerdos": "Lateral esquerdo",
-    "Meio-campistas-centrais": "Meio-campista central",
-    "Meio-campistas-laterais": "Meio-campista lateral",
-    "Meias-ofensivos": "Meia ofensivo",
-    "Extremos-direitos": "Extremo direito",
-    "Extremos-esquerdos": "Extremo esquerdo",
-    "Atacantes": "Atacante",
+    "Zagueiros": "Center Back",
+    "Laterais-direitos": "Right Back",
+    "Laterais-esquerdos": "Left Back",
+    "Meio-campistas-centrais": "Central Midfielder",
+    "Meio-campistas-laterais": "Wide Central Midfielder",
+    "Meias-ofensivos": "Attacking Midfielder",
+    "Extremos-direitos": "Right Winger",
+    "Extremos-esquerdos": "Left Winger",
+    "Atacantes": "Striker",
 }
 
 _GROUP_COLORS = {

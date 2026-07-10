@@ -18,37 +18,30 @@ ORIGIN_PREFILTER_TOP_N = 50
 
 # Option A — percentile profile (dashboard metric groups only).
 SIMILARITY_METRICS_A: tuple[str, ...] = (
-    # Métricas Absolutas
     "impact_passes_p90",
     "phi_p90",
     "dxt_p90",
-    # Métricas Relativas
     "impact_per_pass",
     "phi_per_pass",
-    "dxt_per_pass",
+    "positive_dxt_pct",
     "dxt_gt_01_pct",
-    # Long balls
-    "long_balls",
     "long_impact_passes",
     "long_impact_per_long_pass",
-    # Construção
     "construction_aip",
     "construction_aip_per_pass",
-    # Agressão
     "aggression_aip",
     "aggression_aip_per_pass",
 )
 
-# Keep in sync with passes_engine.SCOUT_SECTION_SPECS (no import — avoids circular load on Cloud).
 SIMILARITY_COMPARE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Produção por 90 min", ("impact_passes_p90", "phi_p90", "dxt_p90")),
+    ("Passing Threat (Per Game)", ("impact_passes_p90", "phi_p90", "dxt_p90")),
     (
-        "Eficiência por passe",
-        ("impact_per_pass", "phi_per_pass", "dxt_per_pass", "dxt_gt_01_pct"),
+        "Pass Effectivness",
+        ("impact_per_pass", "phi_per_pass", "positive_dxt_pct", "dxt_gt_01_pct"),
     ),
-    ("Jogo vertical", ("long_balls", "long_impact_passes", "long_impact_per_long_pass")),
-    ("Construção de jogo", ("construction_aip", "construction_aip_per_pass")),
-    ("Penetração ofensiva", ("aggression_aip", "aggression_aip_per_pass")),
+    ("Long Balls", ("long_impact_passes", "long_impact_per_long_pass")),
+    ("Build-Up", ("construction_aip", "construction_aip_per_pass")),
+    ("Attacking Zone", ("aggression_aip", "aggression_aip_per_pass")),
 )
 
 # Option C — z-score distance (higher weight on core impact volume).
@@ -58,10 +51,9 @@ SIMILARITY_WEIGHTS_C: dict[str, float] = {
     "phi_p90": 2.0,
     "dxt_p90": 2.0,
     "impact_per_pass": 1.5,
-    "dxt_per_pass": 1.5,
+    "positive_dxt_pct": 1.5,
     "phi_per_pass": 1.5,
     "dxt_gt_01_pct": 1.0,
-    "long_balls": 1.0,
     "long_impact_passes": 1.0,
     "long_impact_per_long_pass": 1.0,
     "construction_aip": 1.0,
@@ -83,17 +75,17 @@ _ST_FAMILY = frozenset({"ST", "CF", "SS", "RCF", "LCF"})
 AGGREGATED_SIMILARITY_POSITIONS = ("CB", "CM", "ST")
 
 SIMILARITY_POSITION_LABELS: dict[str, str] = {
-    "CB": "Zagueiro (CB)",
-    "CM": "Meio-campista (CM)",
-    "ST": "Atacante (ST)",
-    "LB": "Lateral esquerdo (LB)",
-    "RB": "Lateral direito (RB)",
-    "LWB": "Ala esquerdo (LWB)",
-    "RWB": "Ala direito (RWB)",
-    "LM": "Meia esquerdo (LM)",
-    "RM": "Meia direito (RM)",
-    "LW": "Extremo esquerdo (LW)",
-    "RW": "Extremo direito (RW)",
+    "CB": "Center Back (CB)",
+    "CM": "Central Midfielder (CM)",
+    "ST": "Striker (ST)",
+    "LB": "Left Back (LB)",
+    "RB": "Right Back (RB)",
+    "LWB": "Left Wing Back (LWB)",
+    "RWB": "Right Wing Back (RWB)",
+    "LM": "Left Midfielder (LM)",
+    "RM": "Right Midfielder (RM)",
+    "LW": "Left Winger (LW)",
+    "RW": "Right Winger (RW)",
 }
 
 TOP_K_DEFAULT = 10
@@ -218,20 +210,20 @@ def describe_dominant_origin_zone(
     pct = float(grid[iy, ix] * 100.0)
 
     if x_hi <= 18:
-        x_desc = "defesa (área)"
+        x_desc = "defensive box"
     elif x_hi <= 40:
-        x_desc = "saída de bola"
+        x_desc = "build-up"
     elif x_hi <= 80:
-        x_desc = "meio-campo"
+        x_desc = "midfield"
     else:
-        x_desc = "terço final"
+        x_desc = "final third"
 
     if y_mid < FIELD_Y / 3:
-        y_desc = "esquerda"
+        y_desc = "left"
     elif y_mid > 2 * FIELD_Y / 3:
-        y_desc = "direita"
+        y_desc = "right"
     else:
-        y_desc = "centro"
+        y_desc = "center"
     return f"{x_desc} · {y_desc} ({pct:.0f}%)"
 
 

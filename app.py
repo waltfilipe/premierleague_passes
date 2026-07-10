@@ -1,4 +1,4 @@
-"""Scout de Passes — Série B: rating por posição e mapa de passes de impacto."""
+"""Pass Scout — position ratings and threat pass maps."""
 
 from __future__ import annotations
 
@@ -21,10 +21,10 @@ def _load_similarity_engine():
 
     module_path = _APP_ROOT / "similarity_engine.py"
     if not module_path.is_file():
-        raise ImportError(f"Arquivo não encontrado: {module_path}")
+        raise ImportError(f"File not found: {module_path}")
     spec = importlib.util.spec_from_file_location("passes_xt_similarity_engine", module_path)
     if spec is None or spec.loader is None:
-        raise ImportError(f"Não foi possível carregar {module_path}")
+        raise ImportError(f"Could not load {module_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     sys.modules["passes_xt_similarity_engine"] = module
@@ -89,8 +89,8 @@ def fmt_rating_score(pass_rating) -> str:
         return "—"
     return f"{float(pass_rating) * 10.0:.1f}"
 
-APP_NAME = "Scout de Passes"
-APP_LEAGUE = "Série B"
+APP_NAME = "Pass Scout"
+APP_LEAGUE = "Premier League"
 PRES_DEMO_KEY = "pres_active_demo"
 
 st.set_page_config(page_title=f"{APP_NAME} | {APP_LEAGUE}", layout="wide", initial_sidebar_state="collapsed")
@@ -773,7 +773,7 @@ st.markdown(
 
 st.title(f"{APP_NAME} · {APP_LEAGUE}")
 
-RATING_COLUMNS = ["Jogador", "Time", "Rating"]
+RATING_COLUMNS = ["Player", "Team", "Rating"]
 SELECTBOX_KEY = "map_player_select"
 
 
@@ -919,8 +919,8 @@ def _rating_table_rows_html(rows: list[dict], *, selected_player_id: str | None)
         sel = " sel" if selected_player_id and str(row["player_id"]) == str(selected_player_id) else ""
         body.append(
             f'<tr class="row{sel}" data-pid="{pid}" onclick="pickPlayer(\'{pid}\')">'
-            f"<td>{html.escape(str(row['Jogador']))}</td>"
-            f"<td class='team'>{html.escape(str(row['Time']))}</td>"
+            f"<td>{html.escape(str(row['Player']))}</td>"
+            f"<td class='team'>{html.escape(str(row['Team']))}</td>"
             f'<td class="rating">{rating_txt}</td>'
             "</tr>"
         )
@@ -966,7 +966,7 @@ def _ranking_grid_html(
         cards.append(
             f'<div class="ranking-card-wrap" style="border-top:3px solid {accent}">'
             f'<div class="ranking-card-head">{html.escape(label)}'
-            f"<span>{len(rows)} jogadores</span></div>"
+            f"<span>{len(rows)} players</span></div>"
             f"{_rating_table_rows_html(rows, selected_player_id=selected_player_id)}"
             "</div>"
         )
@@ -999,8 +999,8 @@ def _rating_groups_from_rated(rated: list[dict]) -> list[tuple[str, list[dict]]]
         rows = [
             {
                 "player_id": p["player_id"],
-                "Jogador": p["player_name"],
-                "Time": p["team"],
+                "Player": p["player_name"],
+                "Team": p["team"],
                 "Rating": p["pass_rating"],
                 "metric_ranks": p.get("metric_ranks", {}),
             }
@@ -1016,7 +1016,7 @@ def render_rating_board(
     selected_player_id: str | None,
 ) -> None:
     if not groups:
-        st.info("Nenhum jogador elegível para ranking.")
+        st.info("No eligible players for ranking.")
         return
 
     height = _rating_board_iframe_height(groups)
@@ -1056,7 +1056,7 @@ def render_rating_table(
     selected_player_id: str | None,
 ) -> None:
     if not rows:
-        st.info("Nenhum jogador elegível nesta posição.")
+        st.info("No eligible players in this position.")
         return
 
     body = []
@@ -1067,8 +1067,8 @@ def render_rating_table(
         sel = " sel" if selected_player_id and str(row["player_id"]) == str(selected_player_id) else ""
         body.append(
             f'<tr class="row{sel}" data-pid="{pid}" onclick="pickPlayer(\'{pid}\')">'
-            f"<td>{html.escape(str(row['Jogador']))}</td>"
-            f"<td class='team'>{html.escape(str(row['Time']))}</td>"
+            f"<td>{html.escape(str(row['Player']))}</td>"
+            f"<td class='team'>{html.escape(str(row['Team']))}</td>"
             f'<td class="rating">{rating_txt}</td>'
             "</tr>"
         )
@@ -1118,14 +1118,14 @@ function pickPlayer(pid) {{
 def _rating_warnings_html(player: dict) -> str:
     warnings: list[str] = []
     if not player.get("eligible_minutes", True):
-        warnings.append("Menos de 30% dos minutos")
+        warnings.append("Below 30% of team minutes")
     if not player.get("eligible_passes", True):
         min_passes = player.get("position_min_passes")
         if min_passes is not None:
             min_txt = fmt_stat_value("passes_completed", min_passes)
-            warnings.append(f"Menos de 30% dos passes da posição (mín. {min_txt})")
+            warnings.append(f"Below position pass threshold (min. {min_txt})")
         else:
-            warnings.append("Menos de 30% dos passes da posição")
+            warnings.append("Below position pass threshold")
     return "".join(
         '<span class="rating-warning-tip">'
         '<span class="rating-warning">⚠</span>'
@@ -1275,9 +1275,9 @@ def _rating_header_html(player: dict, metric_ranks: dict) -> str:
         r_txt = _badge_text_color(r_color)
         rank_txt = f'{int(rating_info["rank"])}/{int(rating_info["total"])}'
         if is_solo:
-            rank_txt += " · individual"
+            rank_txt += " · solo"
         elif player.get("rating_is_compared"):
-            rank_txt += " · vs aptos"
+            rank_txt += " · vs eligible"
         rating_box = (
             f'<span class="rating-tip">'
             f'<div class="rating-box" style="background:{r_color};color:{r_txt};margin-bottom:0">'
@@ -1357,7 +1357,7 @@ def _section_grade_accordion_html(
 def _build_dashboard_sidebar_html(player: dict) -> str:
     general_sections: list[tuple[str, str | None, tuple[str, ...], bool]] = [
         (
-            "Participação",
+            "Participation",
             None,
             (
                 "minutes",
@@ -1415,16 +1415,16 @@ def _cmp_delta_html(target_val: float | None, similar_val: float | None) -> tupl
     t = float(target_val)
     s = float(similar_val)
     if abs(t - s) < 0.05:
-        dot = '<span class="cmp-delta flat" title="Empate">●</span>'
+        dot = '<span class="cmp-delta flat" title="Tie">●</span>'
         return dot, dot
     if t > s:
         return (
-            '<span class="cmp-delta up" title="Acima do similar">▲</span>',
-            '<span class="cmp-delta down" title="Abaixo da referência">▼</span>',
+            '<span class="cmp-delta up" title="Above similar">▲</span>',
+            '<span class="cmp-delta down" title="Below reference">▼</span>',
         )
     return (
-        '<span class="cmp-delta down" title="Abaixo do similar">▼</span>',
-        '<span class="cmp-delta up" title="Acima da referência">▲</span>',
+        '<span class="cmp-delta down" title="Below similar">▼</span>',
+        '<span class="cmp-delta up" title="Above reference">▲</span>',
     )
 
 
@@ -1434,7 +1434,7 @@ def render_player_layout(player: dict, passes) -> None:
 
     with col_maps:
         if passes is None or passes.empty:
-            st.warning("Sem passes para este jogador.")
+            st.warning("No passes for this player.")
         else:
             r1c1, r1c2 = st.columns(2, gap="small")
             with r1c1:
@@ -1474,11 +1474,11 @@ def render_map_section(
     pool_by_position: dict[str, list[dict]],
     passes_by_player: dict,
 ) -> None:
-    st.caption("Selecione abaixo ou clique em um jogador na aba Ranking.")
+    st.caption("Select below or click a player in the Ranking tab.")
 
     options = _player_options(all_players)
     if not options:
-        st.info("Nenhum jogador com passes para o mapa.")
+        st.info("No players with passes for the map.")
         return
 
     labels = [o[3] for o in options]
@@ -1488,14 +1488,14 @@ def render_map_section(
     _sync_player_selection(players_by_id, label_by_id)
 
     selected_label = st.selectbox(
-        "Jogador",
+        "Player",
         options=labels,
         key=SELECTBOX_KEY,
-        placeholder="Selecione um jogador",
+        placeholder="Select a player",
     )
 
     if not selected_label:
-        st.info("Selecione um jogador na lista ou na aba Ranking.")
+        st.info("Select a player from the list or the Ranking tab.")
         return
 
     player_id = id_by_label[selected_label]
@@ -1511,11 +1511,11 @@ def render_map_section(
 
 def render_rating_section(rated: list[dict], *, selected_player_id: str | None) -> None:
     st.markdown(
-        '<div class="pres-card"><h4>Ranking por grupo de posição</h4>'
-        "<p>Rating = média de 6 dimensões (60% eficiência · 40% volume), com shrinkage e blend rank/percentil. "
-        "Escala: 1º = 9,0 · mediano = 6,0 · último = 3,0. "
-        f"Elegível: minutos e passes ≥ P25 do grupo (referência P{RATING_ELIGIBILITY_PERCENTILE}). "
-        "Clique em um jogador para abrir no Dashboard.</p></div>",
+        '<div class="pres-card"><h4>Ranking by position group</h4>'
+        "<p>Rating = average of 6 dimensions (60% efficiency · 40% volume), with shrinkage and rank/percentile blend. "
+        "Scale: 1st = 9.0 · median = 6.0 · last = 3.0. "
+        f"Eligible: minutes and passes ≥ P25 of group (P{RATING_ELIGIBILITY_PERCENTILE} reference). "
+        "Click a player to open the Dashboard.</p></div>",
         unsafe_allow_html=True,
     )
     render_rating_board(_rating_groups_from_rated(rated), selected_player_id=selected_player_id)
@@ -1533,7 +1533,7 @@ def _comparison_metrics_html(
     rows = [
         '<div class="player-card">',
         '<div class="cmp-row cmp-row-head">',
-        "<span>Métrica</span>",
+        "<span>Metric</span>",
         f"<span>{html.escape(target_league)}</span>",
         f"<span>{html.escape(similar_league)}</span>",
         "</div>",
@@ -1586,7 +1586,7 @@ def _render_comparison_maps_row(
             )
             st.pyplot(fig, clear_figure=True, use_container_width=True)
         else:
-            st.caption("Sem passes.")
+            st.caption("No passes.")
     with m2:
         if similar_passes is not None and not similar_passes.empty:
             fig = draw_pass_origin_heatmap(
@@ -1599,7 +1599,7 @@ def _render_comparison_maps_row(
             )
             st.pyplot(fig, clear_figure=True, use_container_width=True)
         else:
-            st.caption("Sem passes.")
+            st.caption("No passes.")
 
 
 def _fig_to_blurred_b64(fig, *, blur_radius: int = 7) -> str:
@@ -1655,29 +1655,29 @@ def _presentation_example_player(
 
 def _render_presentation_blur_demo(player: dict, passes) -> None:
     team_label = str(player.get("team", "—"))
-    name = str(player.get("player_name", "Jogador"))
+    name = str(player.get("player_name", "Player"))
     map_specs = [
         (
             draw_all_completed_passes_map(passes, name, team_label, dashboard=True),
-            "Passes completos",
-            "Todos os passes completados: origem e trajeto. Mostra onde o jogador circula com a bola.",
+            "Completed passes",
+            "All completed passes: origin and trajectory. Shows where the player moves the ball.",
         ),
         (
             draw_pass_destination_heatmap(
                 passes, name, team_label, dashboard=True, impact_only=False,
             ),
-            "Destino dos completos",
-            "Heatmap de chegada dos passes completos — zonas onde o time passa a ameaçar.",
+            "Completed destinations",
+            "Heatmap of completed pass arrivals — zones where the team becomes dangerous.",
         ),
         (
             draw_impact_pass_map(passes, name, team_label, dashboard=True),
-            "Passes de impacto",
-            "Passes que mudam o xT de forma relevante. Cores destacam progressão e alto impacto.",
+            "Threat passes",
+            "Passes that meaningfully change xT. Colors highlight progression and high threat.",
         ),
         (
             draw_pass_destination_heatmap(passes, name, team_label, dashboard=True),
-            "Destino do impacto",
-            "Para onde vão os passes de impacto — leitura de penetração e linhas de passe decisivas.",
+            "Threat destinations",
+            "Where threat passes arrive — penetration lanes and decisive passing lines.",
         ),
     ]
     tiles_html = "".join(
@@ -1692,9 +1692,9 @@ def _render_presentation_blur_demo(player: dict, passes) -> None:
         f'<div class="pres-blur-back">{sidebar_back}</div>'
         '<div class="pres-blur-overlay pres-blur-overlay-side">'
         '<div class="pres-blur-caption">'
-        "<strong>Cards do jogador</strong>"
-        "<p>À direita: rating geral, participação e pilares com nota. "
-        "Clique na seta de cada pilar para abrir as métricas detalhadas.</p>"
+        "<strong>Player cards</strong>"
+        "<p>On the right: overall rating, participation, and pillar scores. "
+        "Click each pillar arrow to expand detailed metrics.</p>"
         "</div></div></div></div>"
     )
     st.html(demo_html, width="stretch")
@@ -1704,17 +1704,17 @@ PRES_FEATURE_SPECS: tuple[tuple[str, str, str], ...] = (
     (
         "dashboard",
         "Dashboard",
-        "Grid 2×2 de mapas à esquerda e cards de rating, participação e pilares à direita.",
+        "2×2 map grid on the left and rating, participation, and pillar cards on the right.",
     ),
     (
         "ranking",
         "Ranking",
-        "Tabelas por grupo de posição — clique em um jogador para abrir no Dashboard.",
+        "Tables by position group — click a player to open the Dashboard.",
     ),
     (
         "similarity",
-        "Similaridade",
-        "Compare atletas entre Série B e Série A na mesma posição (lado respeitado).",
+        "Similarity",
+        "Compare players across leagues in the same position (side respected).",
     ),
 )
 
@@ -1736,22 +1736,22 @@ def _render_pres_feature_cards() -> None:
                 f"<p>{html.escape(desc)}</p></div>",
                 unsafe_allow_html=True,
             )
-            arrow = "▼ Ocultar modelo" if is_open else "▶ Ver modelo"
+            arrow = "▼ Hide preview" if is_open else "▶ Show preview"
             if st.button(arrow, key=f"pres_demo_btn_{key}", use_container_width=True):
                 _toggle_pres_demo(key)
 
 
 def _similarity_mock_inner_html() -> str:
     table_rows = "".join(
-        f"<tr><td>{n}</td><td>Jogador {n}</td><td>Time</td><td>{90 - i * 4}%</td><td>{75 - i * 3}%</td></tr>"
+        f"<tr><td>{n}</td><td>Player {n}</td><td>Team</td><td>{90 - i * 4}%</td><td>{75 - i * 3}%</td></tr>"
         for i, n in enumerate(range(1, 6), start=0)
     )
     return (
         '<div class="pres-sim-mock">'
-        '<div class="pres-sim-mock-head">Similaridade B → A</div>'
-        '<div class="pres-sim-mock-field">Jogador Série B · selecione na lista</div>'
+        '<div class="pres-sim-mock-head">Similarity B → A</div>'
+        '<div class="pres-sim-mock-field">Serie B player · select from the list</div>'
         '<table class="pres-sim-mock-table"><thead><tr>'
-        "<th>#</th><th>Jogador</th><th>Time</th><th>Sim.</th><th>Origem</th>"
+        "<th>#</th><th>Player</th><th>Team</th><th>Sim.</th><th>Origin</th>"
         f"</tr></thead><tbody>{table_rows}</tbody></table>"
         '<div class="pres-sim-mock-compare">'
         '<div class="pres-sim-mock-map"></div><div class="pres-sim-mock-map"></div>'
@@ -1767,11 +1767,11 @@ def _render_presentation_similarity_demo() -> None:
         f'<div class="pres-blur-back">{_similarity_mock_inner_html()}</div>'
         '<div class="pres-blur-overlay pres-blur-overlay-side">'
         '<div class="pres-blur-caption">'
-        "<strong>Similaridade B ↔ A</strong>"
-        "<p>Selecione um jogador de uma liga e veja os <strong>10 mais parecidos</strong> "
-        "na outra, na mesma posição (LB↔LB, LM↔LM; CB, CM e ST aglutinados).</p>"
-        "<p style='margin-top:0.45rem'>Ranking por z-scores das métricas de passe. "
-        "Ao clicar em um similar: mapas de origem lado a lado e percentis com setas ▲/▼.</p>"
+        "<strong>Similarity B ↔ A</strong>"
+        "<p>Select a player from one league and see the <strong>10 most similar</strong> "
+        "in the other league at the same position (LB↔LB, LM↔LM; CB, CM and ST grouped).</p>"
+        "<p style='margin-top:0.45rem'>Ranked by pass-metric z-scores. "
+        "Click a row to compare maps and percentiles side by side.</p>"
         "</div></div></div>"
     )
     st.html(demo_html, width="stretch")
@@ -1779,7 +1779,7 @@ def _render_presentation_similarity_demo() -> None:
 
 def _render_presentation_ranking_demo(groups: list[tuple[str, list[dict]]]) -> None:
     if not groups:
-        st.info("Sem dados de ranking para demonstração.")
+        st.info("No ranking data available for preview.")
         return
     demo_groups = groups[:3]
     inner = _ranking_grid_html(demo_groups)
@@ -1788,9 +1788,9 @@ def _render_presentation_ranking_demo(groups: list[tuple[str, list[dict]]]) -> N
         f'<div class="pres-blur-back">{inner}</div>'
         '<div class="pres-blur-overlay pres-blur-overlay-side">'
         '<div class="pres-blur-caption">'
-        "<strong>Ranking por grupo</strong>"
-        "<p>Tabelas por posição com rating (1º = 9,0 · mediano = 6,0). "
-        "Clique em um jogador para abrir sua análise completa no Dashboard.</p>"
+        "<strong>Ranking by group</strong>"
+        "<p>Tables by position with rating (1st = 9.0 · median = 6.0). "
+        "Click a player to open the full Dashboard analysis.</p>"
         "</div></div></div>"
     )
     st.html(demo_html, width="stretch")
@@ -1798,10 +1798,10 @@ def _render_presentation_ranking_demo(groups: list[tuple[str, list[dict]]]) -> N
 
 def _render_pres_flow_steps() -> None:
     steps = [
-        ("Apresentação", "Entenda o layout e navegue pelos modelos."),
-        ("Dashboard", "Analise mapas e cards de qualquer jogador."),
-        ("Ranking", "Explore o ranking por grupo e abra jogadores no Dashboard."),
-        ("Similaridade", "Compare atletas entre Série B e Série A."),
+        ("Overview", "Understand the layout and browse previews."),
+        ("Dashboard", "Analyze maps and player cards for any player."),
+        ("Ranking", "Explore rankings by group and open players in the Dashboard."),
+        ("Similarity", "Compare players across leagues."),
     ]
     items = []
     for idx, (title, text) in enumerate(steps, start=1):
@@ -1812,7 +1812,7 @@ def _render_pres_flow_steps() -> None:
             f'<span class="desc">{html.escape(text)}</span></div>'
         )
     st.markdown(
-        '<div class="pres-card"><h4 style="margin-bottom:0.75rem">Fluxo do app</h4>'
+        '<div class="pres-card"><h4 style="margin-bottom:0.75rem">App flow</h4>'
         f'<div class="pres-flow">{"".join(items)}</div></div>',
         unsafe_allow_html=True,
     )
@@ -1828,10 +1828,10 @@ def render_presentation_tab(
 ) -> None:
     st.markdown(
         '<div class="pres-card pres-card-hero">'
-        f"<h4>{html.escape(APP_NAME)} — ameaça esperada por passe (xT)</h4>"
-        "<p>Medimos a qualidade dos passes com um modelo de <strong>expected threat (xT)</strong>. "
-        "Passes que aumentam a probabilidade de gol valem mais. O rating resume o jogador "
-        f"frente aos pares da <strong>mesma posição</strong> na {html.escape(APP_LEAGUE)}.</p></div>",
+        f"<h4>{html.escape(APP_NAME)} — expected threat per pass (xT)</h4>"
+        "<p>We measure pass quality with an <strong>expected threat (xT)</strong> model. "
+        "Passes that increase goal probability score higher. The rating summarizes the player "
+        f"against <strong>position peers</strong> in the {html.escape(APP_LEAGUE)}.</p></div>",
         unsafe_allow_html=True,
     )
 
@@ -1851,7 +1851,7 @@ def render_presentation_tab(
                     player = rate_player_vs_eligible_pool(player, pool_by_position.get(group, []))
                 _render_presentation_blur_demo(player, ex_passes)
             else:
-                st.info("Sem jogador de exemplo para demonstrar o Dashboard.")
+                st.info("No sample player available for the Dashboard preview.")
         elif active_demo == "ranking":
             _render_presentation_ranking_demo(_rating_groups_from_rated(rated))
         elif active_demo == "similarity":
@@ -1882,7 +1882,7 @@ def _render_similarity_player_panel(
         m1, m2, m3 = st.columns(3)
         m1.metric("Minutos", fmt_stat_value("minutes", player.get("minutes")))
         m2.metric("Passes", fmt_stat_value("passes_completed", player.get("passes_completed")))
-        m3.metric("Impact p90", fmt_stat_value("impact_passes_p90", player.get("impact_passes_p90")))
+        m3.metric("Threat Passes p90", fmt_stat_value("impact_passes_p90", player.get("impact_passes_p90")))
     else:
         g1, g2 = st.columns(2)
         g1.metric("Minutos", fmt_stat_value("minutes", player.get("minutes")))
@@ -1890,7 +1890,7 @@ def _render_similarity_player_panel(
 
     profile = sim.pass_origin_profile(passes) if passes is not None else None
     if profile is not None and not comparison_mode:
-        st.caption(f"Origem dominante: {sim.describe_dominant_origin_zone(profile)}")
+        st.caption(f"Dominant origin: {sim.describe_dominant_origin_zone(profile)}")
 
     if not comparison_mode and passes is not None and not passes.empty:
         fig = draw_pass_origin_heatmap(
@@ -1904,7 +1904,7 @@ def _render_similarity_player_panel(
         )
         st.pyplot(fig, clear_figure=True, use_container_width=comparison_mode)
     else:
-        st.caption("Sem passes para heatmap de origem.")
+        st.caption("No passes for origin heatmap.")
 
 
 def _similarity_results_df(
@@ -1920,25 +1920,25 @@ def _similarity_results_df(
     for rank, row in enumerate(results, start=1):
         entry = {
             "#": rank,
-            "Jogador": row.get("player_name", "—"),
-            "Time": row.get("team", "—"),
+            "Player": row.get("player_name", "—"),
+            "Team": row.get("team", "—"),
             "Sim.": f"{row.get('similarity_pct', 0):.0f}%",
             "_player_id": str(row.get("player_id", "")),
         }
         if origin_dual:
-            entry["Sim. métricas"] = f"{row.get('similarity_pct', 0):.1f}%"
-            entry["Sim. origem"] = f"{row.get('origin_similarity_pct', 0):.1f}%"
-            entry["Origem dominante"] = row.get("origin_dominant", "—")
+            entry["Sim. metrics"] = f"{row.get('similarity_pct', 0):.1f}%"
+            entry["Sim. origin"] = f"{row.get('origin_similarity_pct', 0):.1f}%"
+            entry["Dominant origin"] = row.get("origin_dominant", "—")
         elif include_origin:
-            entry["Similaridade"] = f"{row.get('similarity_pct', 0):.1f}%"
-            entry["Origem dominante"] = row.get("origin_dominant", "—")
+            entry["Similarity"] = f"{row.get('similarity_pct', 0):.1f}%"
+            entry["Dominant origin"] = row.get("origin_dominant", "—")
         elif origin_column:
             origin_val = row.get("origin_similarity_pct")
-            entry["Origem"] = (
+            entry["Origin"] = (
                 f"{float(origin_val):.0f}%" if origin_val is not None else "—"
             )
         else:
-            entry["Similaridade"] = f"{row.get('similarity_pct', 0):.1f}%"
+            entry["Similarity"] = f"{row.get('similarity_pct', 0):.1f}%"
         rows.append(entry)
     return pd.DataFrame(rows)
 
@@ -1961,7 +1961,7 @@ def _render_similarity_results_tab(
     import pandas as pd
 
     if not results:
-        st.info("Nenhum similar encontrado.")
+        st.info("No similar players found.")
         return
 
     df = _similarity_results_df(
@@ -1993,7 +1993,7 @@ def _render_similarity_results_tab(
             selected_rows = list(state.get("selection", {}).get("rows", []) or [])
 
     if not selected_rows:
-        st.caption("Clique em uma linha da tabela para comparar com o jogador selecionado.")
+        st.caption("Click a table row to compare with the selected player.")
         return
 
     similar = dict(results[int(selected_rows[0])])
@@ -2005,10 +2005,10 @@ def _render_similarity_results_tab(
     similar_pct = sim.position_pool_percentiles(similar, similar_pool_by_pos, keys=compare_keys)
     target_pos = sim.player_search_position(target) or "—"
 
-    st.markdown("#### Comparação")
+    st.markdown("#### Comparison")
     st.caption(
-        f"Percentis no pool {html.escape(sim.similarity_position_label(target_pos))} · "
-        f"▲ verde = acima · ▼ vermelho = abaixo "
+        f"Percentiles in the {html.escape(sim.similarity_position_label(target_pos))} pool · "
+        f"▲ green = above · ▼ red = below "
         f"({html.escape(target_league)} vs {html.escape(similar_league)})."
     )
 
@@ -2023,7 +2023,7 @@ def _render_similarity_results_tab(
 
     col_target, col_similar = st.columns(2, gap="small")
     with col_target:
-        st.markdown(f"**Referência · {html.escape(target_league)}**", unsafe_allow_html=True)
+        st.markdown(f"**Reference · {html.escape(target_league)}**", unsafe_allow_html=True)
         _render_similarity_player_panel(
             target,
             target_passes,
@@ -2041,7 +2041,7 @@ def _render_similarity_results_tab(
         )
         if similar.get("origin_similarity_pct") is not None:
             st.caption(
-                f"Similaridade de origem ({sim.ORIGIN_ANALYSIS_COLS}×{sim.ORIGIN_ANALYSIS_ROWS}): "
+                f"Origin similarity ({sim.ORIGIN_ANALYSIS_COLS}×{sim.ORIGIN_ANALYSIS_ROWS}): "
                 f"{float(similar['origin_similarity_pct']):.1f}%"
             )
 
@@ -2067,22 +2067,22 @@ def render_similarity_section(
 ) -> None:
     import pandas as pd
 
-    title = "Similaridade B → A" if sb_to_sa else "Similaridade A → B"
+    title = "Similarity B → A" if sb_to_sa else "Similarity A → B"
     st.subheader(title)
     st.caption(
-        f"Selecione um jogador da {'Série B' if sb_to_sa else 'Série A'}; "
-        f"a tabela mostra os top {SIMILARITY_TOP_K} da {'Série A' if sb_to_sa else 'Série B'} "
-        "na mesma posição (lado respeitado; CB, CM e ST aglutinados). Clique em uma linha para comparar."
+        f"Select a player from {'Serie B' if sb_to_sa else 'Serie A'}; "
+        f"the table shows the top {SIMILARITY_TOP_K} from {'Serie A' if sb_to_sa else 'Serie B'} "
+        "at the same position (side respected; CB, CM and ST grouped). Click a row to compare."
     )
 
     if not all_players:
-        st.info("Nenhum jogador disponível.")
+        st.info("No players available.")
         return
 
     serie_a_players = load_serie_a_players()
     if not serie_a_players:
         st.warning(
-            "Dados da Série A indisponíveis — confirme season_all_brfull.csv e reimplante o app."
+            "Serie A data unavailable — confirm season_all_brfull.csv and redeploy the app."
         )
         return
 
@@ -2096,15 +2096,15 @@ def render_similarity_section(
 
     if sb_to_sa:
         options = _player_options(sb_enriched)
-        select_label = "Jogador Série B"
+        select_label = "Serie B player"
         select_key = SIMILARITY_SELECT_SB_KEY
     else:
         options = _player_options(serie_a_enriched)
-        select_label = "Jogador Série A"
+        select_label = "Serie A player"
         select_key = SIMILARITY_SELECT_SA_KEY
 
     if not options:
-        st.info("Nenhum jogador disponível para similaridade.")
+        st.info("No players available for similarity.")
         return
 
     labels = [o[3] for o in options]
@@ -2113,10 +2113,10 @@ def render_similarity_section(
         select_label,
         options=labels,
         key=select_key,
-        placeholder="Selecione um jogador",
+        placeholder="Select a player",
     )
     if not selected_label:
-        st.info("Selecione um jogador para ver os similares.")
+        st.info("Select a player to view similar players.")
         return
 
     target_id = id_by_label[selected_label]
@@ -2128,24 +2128,24 @@ def render_similarity_section(
         target_passes = passes_by_player_sb.get(target_id)
         pool = sim.similarity_search_pool(serie_a_by_pos, search_pos)
         pool_passes = serie_a_passes
-        pool_label = f"Série A · {sim.similarity_position_label(search_pos)}"
-        target_league = "Série B"
+        pool_label = f"Serie A · {sim.similarity_position_label(search_pos)}"
+        target_league = "Serie B"
     else:
         target = dict(players_sa_by_id[target_id])
         target_passes = serie_a_passes.get(target_id)
         pool = sim.similarity_search_pool(sb_by_pos, search_pos)
         pool_passes = passes_by_player_sb
-        pool_label = f"Série B · {sim.similarity_position_label(search_pos)}"
-        target_league = "Série A"
+        pool_label = f"Serie B · {sim.similarity_position_label(search_pos)}"
+        target_league = "Serie A"
 
     if not search_pos:
-        st.warning("Posição inválida para comparação (goleiros são excluídos).")
+        st.warning("Invalid position for comparison (goalkeepers are excluded).")
         return
 
     if not pool:
         st.warning(
-            f"Nenhum jogador elegível na posição **{html.escape(sim.similarity_position_label(search_pos))}** "
-            f"em {pool_label.split(' · ')[0]}."
+            f"No eligible players at position **{html.escape(sim.similarity_position_label(search_pos))}** "
+            f"in {pool_label.split(' · ')[0]}."
         )
         return
 
@@ -2155,7 +2155,7 @@ def render_similarity_section(
         f"{html.escape(str(target.get('team', '—')))} · "
         f"{html.escape(str(target.get('position', '—')))} · "
         f"**{html.escape(group_label)}** · "
-        f"{html.escape(target_league)} → pool **{html.escape(pool_label)}** ({len(pool)} jogadores)",
+        f"{html.escape(target_league)} → pool **{html.escape(pool_label)}** ({len(pool)} players)",
         unsafe_allow_html=True,
     )
     c1, c2 = st.columns(2)
@@ -2164,11 +2164,11 @@ def render_similarity_section(
 
     top_k = SIMILARITY_TOP_K
     target_league_label = target_league
-    similar_league_label = "Série A" if sb_to_sa else "Série B"
+    similar_league_label = "Serie A" if sb_to_sa else "Serie B"
 
     st.caption(
-        f"Ranking por z-scores no pool {similar_league_label}. "
-        f"A coluna Origem é informativa (mapa de origem) e não altera o ranking."
+        f"Ranked by z-scores in the {similar_league_label} pool. "
+        f"The Origin column is informational (pass-origin map) and does not change the ranking."
     )
     results = sim.find_similar_option_c(target, pool, top_k=top_k)
     results = sim.attach_pass_origin_similarity(
@@ -2189,7 +2189,7 @@ def render_similarity_section(
         include_origin=False,
         origin_column=True,
     )
-    with st.expander("Métricas usadas"):
+    with st.expander("Metrics used"):
         st.write(", ".join(metric_label(k) for k in sim.SIMILARITY_METRICS_A))
 
 
@@ -2198,7 +2198,7 @@ def main() -> None:
     tier_model = FIXED_TIER_MODEL
     xt_surface_mode = FIXED_XT_SURFACE_MODE
 
-    with st.spinner("Carregando dados…"):
+    with st.spinner("Loading data…"):
         _, all_players = load_analytics(
             tier_model=tier_model,
             classification_model=classification_model,
@@ -2215,7 +2215,7 @@ def main() -> None:
     selected_player_id = st.session_state.get("map_player_id")
 
     tab_pres, tab_dashboard, tab_ranking, tab_sim_ba, tab_sim_ab = st.tabs(
-        ["Apresentação", "Dashboard", "Ranking", "Similaridade B->A", "Similaridade A->B"]
+        ["Overview", "Dashboard", "Ranking", "Similarity B->A", "Similarity A->B"]
     )
     with tab_pres:
         render_presentation_tab(
