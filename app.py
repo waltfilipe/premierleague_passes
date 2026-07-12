@@ -395,6 +395,7 @@ PRES_DEMO_KEY = "pres_active_demo"
 FONT_AWESOME_CDN = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
 PA_RADAR_LINE_COLOR = "#c4b5fd"
 PA_RADAR_FILL_COLOR = "#c4b5fd"
+PLAYER_ANALYSIS_CARD_HEIGHT_PX = 550
 
 st.set_page_config(page_title=f"{APP_NAME} | {APP_LEAGUE}", layout="wide", initial_sidebar_state="collapsed")
 
@@ -1255,7 +1256,10 @@ st.markdown(
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
-        min-height: 100%;
+        height: var(--pa-card-h);
+        min-height: var(--pa-card-h);
+        max-height: var(--pa-card-h);
+        overflow: hidden;
         box-sizing: border-box;
     }
     .pa-pillars-card {
@@ -1263,7 +1267,10 @@ st.markdown(
         flex-direction: column;
         padding: 0.75rem 0.7rem 0.7rem;
         margin-bottom: 0;
-        min-height: 100%;
+        height: var(--pa-card-h);
+        min-height: var(--pa-card-h);
+        max-height: var(--pa-card-h);
+        overflow: hidden;
         box-sizing: border-box;
     }
     .pa-identity-card {
@@ -1272,7 +1279,10 @@ st.markdown(
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
-        min-height: 100%;
+        height: var(--pa-card-h);
+        min-height: var(--pa-card-h);
+        max-height: var(--pa-card-h);
+        overflow: hidden;
         box-sizing: border-box;
     }
     .pa-identity-top {
@@ -1330,6 +1340,7 @@ st.markdown(
         gap: 0;
         flex: 1;
         min-height: 0;
+        overflow-y: auto;
         justify-content: space-between;
     }
     .pa-part-row {
@@ -1453,7 +1464,9 @@ st.markdown(
         display: flex;
         flex-direction: column;
         gap: 0.34rem;
-        flex: 0 0 auto;
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
     }
     .pa-pillar-group-label {
         margin: 0.55rem 0 0.3rem 0;
@@ -2671,6 +2684,7 @@ def _build_player_analysis_layout_html(
     rating_slot_fn=None,
 ) -> str:
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
+    layout_style = f"--pa-card-h: {PLAYER_ANALYSIS_CARD_HEIGHT_PX}px;"
     rating_panel = _player_analysis_rating_panel_html(player, metric_ranks)
     radar_card = _pillar_radar_card_html(
         player,
@@ -2701,7 +2715,7 @@ def _build_player_analysis_layout_html(
         fmt_stat_fn=fmt_stat_fn,
     )
     return (
-        '<div class="pa-layout">'
+        f'<div class="pa-layout" style="{layout_style}">'
         f'<div class="pa-col pa-col-identity">{identity_card}</div>'
         '<div class="pa-col pa-col-score">'
         '<div class="pa-score-stack">'
