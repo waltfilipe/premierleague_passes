@@ -30,6 +30,22 @@ def _load_similarity_engine():
     sys.modules["passes_xt_similarity_engine"] = module
     return module
 
+
+def _load_progression_engine():
+    """Load local progression_engine.py explicitly (avoids path/shadowing on Streamlit Cloud)."""
+    import importlib.util
+
+    module_path = _APP_ROOT / "progression_engine.py"
+    if not module_path.is_file():
+        raise ImportError(f"File not found: {module_path}")
+    spec = importlib.util.spec_from_file_location("passes_xt_progression_engine", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    sys.modules["passes_xt_progression_engine"] = module
+    return module
+
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -58,7 +74,7 @@ from carries_maps import (
     draw_impact_pass_map as draw_carry_impact_map,
     draw_pass_destination_heatmap as draw_carry_threat_heatmap,
 )
-import progression_engine as pge
+pge = _load_progression_engine()
 from progression_maps import (
     draw_all_actions_heatmap,
     draw_all_actions_map,
@@ -131,7 +147,25 @@ CARRIES_PARTICIPATION_KEYS: tuple[str, ...] = (
 PROGRESSION_DATA_CACHE_VERSION = pge.DATA_CACHE_VERSION
 PROGRESSION_SCOUT_SECTION_SPECS = pge.PROGRESSION_SCOUT_SECTION_SPECS
 PROGRESSION_PARTICIPATION_KEYS = pge.PROGRESSION_PARTICIPATION_KEYS
-TRADITIONAL_PARTICIPATION_KEYS = pge.TRADITIONAL_PARTICIPATION_KEYS
+TRADITIONAL_PARTICIPATION_KEYS = getattr(
+    pge,
+    "TRADITIONAL_PARTICIPATION_KEYS",
+    (
+        "passes_total",
+        "pass_completion_pct",
+        "long_balls",
+        "long_ball_completion_pct",
+        "progressive_passes",
+        "final_third_passes",
+        "passes_to_box",
+        "carry_progressive_carries",
+        "very_progressive_carries",
+        "dribbles_success",
+        "dribbles_final_third",
+        "key_passes",
+        "crosses_total",
+    ),
+)
 pg_compute_progression_ratings = pge.compute_progression_ratings
 pg_build_progression_dashboard_player = pge.build_progression_dashboard_player
 pg_analyst_metric_label = pge.analyst_metric_label
