@@ -1241,43 +1241,29 @@ st.markdown(
         display: grid;
         grid-template-columns: minmax(220px, 0.92fr) minmax(320px, 1.35fr) minmax(210px, 0.78fr);
         gap: 0.75rem;
-        align-items: start;
+        align-items: stretch;
     }
     @media (max-width: 1100px) {
         .pa-layout { grid-template-columns: 1fr; }
+        .pa-col { display: flex; flex-direction: column; }
     }
     .pa-col {
-        display: flex;
-        flex-direction: column;
-        gap: 0;
+        display: contents;
         min-width: 0;
-    }
-    .pa-col-score {
-        display: flex;
-        flex-direction: column;
     }
     .pa-score-stack {
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
-        height: var(--pa-card-h);
-        min-height: var(--pa-card-h);
-        max-height: var(--pa-card-h);
-        overflow: hidden;
+        min-height: 100%;
         box-sizing: border-box;
-    }
-    .pa-col-pillars {
-        min-width: 0;
     }
     .pa-pillars-card {
         display: flex;
         flex-direction: column;
         padding: 0.75rem 0.7rem 0.7rem;
         margin-bottom: 0;
-        height: var(--pa-card-h);
-        min-height: var(--pa-card-h);
-        max-height: var(--pa-card-h);
-        overflow: hidden;
+        min-height: 100%;
         box-sizing: border-box;
     }
     .pa-identity-card {
@@ -1286,10 +1272,7 @@ st.markdown(
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
-        height: var(--pa-card-h);
-        min-height: var(--pa-card-h);
-        max-height: var(--pa-card-h);
-        overflow: hidden;
+        min-height: 100%;
         box-sizing: border-box;
     }
     .pa-identity-top {
@@ -1347,15 +1330,14 @@ st.markdown(
         gap: 0;
         flex: 1;
         min-height: 0;
-        overflow-y: auto;
-        justify-content: flex-start;
+        justify-content: space-between;
     }
     .pa-part-row {
         display: flex;
         justify-content: space-between;
         align-items: baseline;
         gap: 0.75rem;
-        padding: 0.22rem 0;
+        padding: 0.24rem 0;
         border-bottom: 1px solid #243049;
     }
     .pa-part-row:last-child { border-bottom: none; padding-bottom: 0; }
@@ -1442,12 +1424,10 @@ st.markdown(
         display: flex;
         flex-direction: column;
         min-height: 0;
-        overflow: hidden;
     }
     .pa-col-score .radar-card .radar-card-body {
         flex: 1;
         min-height: 0;
-        overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1757,16 +1737,6 @@ def _section_rating_pill_html(score: float | None) -> str:
         f'<span class="section-rating-pill" style="background:{bg};color:{txt}">'
         f"{html.escape(fmt_rating_score(score))}</span>"
     )
-
-
-def _player_analysis_card_height_px(n_sections: int, *, n_groups: int = 2) -> int:
-    """Match the pillars column height (closed accordions + group labels)."""
-    card_pad = 24
-    group_labels = 20 * n_groups
-    accordion_row = 48
-    section_gaps = max(0, n_sections - 1) * 6
-    group_gap = 10
-    return card_pad + group_labels + (n_sections * accordion_row) + section_gaps + group_gap
 
 
 def _player_options(rated: list[dict]) -> list[tuple[str, str, str, str]]:
@@ -2701,8 +2671,6 @@ def _build_player_analysis_layout_html(
     rating_slot_fn=None,
 ) -> str:
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
-    card_h = _player_analysis_card_height_px(len(scout_section_specs))
-    layout_style = f"--pa-card-h: {card_h}px;"
     rating_panel = _player_analysis_rating_panel_html(player, metric_ranks)
     radar_card = _pillar_radar_card_html(
         player,
@@ -2733,7 +2701,7 @@ def _build_player_analysis_layout_html(
         fmt_stat_fn=fmt_stat_fn,
     )
     return (
-        f'<div class="pa-layout" style="{layout_style}">'
+        '<div class="pa-layout">'
         f'<div class="pa-col pa-col-identity">{identity_card}</div>'
         '<div class="pa-col pa-col-score">'
         '<div class="pa-score-stack">'
