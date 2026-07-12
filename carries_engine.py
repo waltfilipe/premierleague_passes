@@ -34,7 +34,7 @@ except ImportError:
 SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles.csv"
 SEASON_SERIEA_CARRY_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles_seriea.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 2
+DATA_CACHE_VERSION = 3
 
 CARRY_CATEGORIES = frozenset({"ball-carries", "dribbles"})
 

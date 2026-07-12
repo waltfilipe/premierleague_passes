@@ -57,7 +57,7 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 49
+DATA_CACHE_VERSION = 50
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
@@ -1910,11 +1910,12 @@ def _metric_ranks_for_keys(pool: list[dict], keys: tuple[str, ...]) -> dict[str,
     n = len(pool)
     if n == 0:
         return {}
-    out: dict[str, dict[str, dict]] = {p["player_id"]: {} for p in pool}
+    out: dict[str, dict[str, dict]] = {str(p["player_id"]): {} for p in pool}
     for key in keys:
         ordered = sorted(pool, key=lambda p: p.get(key, 0) or 0, reverse=True)
         for rank, player in enumerate(ordered, start=1):
-            out[player["player_id"]][key] = {
+            pid = str(player["player_id"])
+            out[pid][key] = {
                 "rank": rank,
                 "total": n,
                 "value": player.get(key),

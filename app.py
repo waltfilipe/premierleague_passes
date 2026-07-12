@@ -168,6 +168,8 @@ TRADITIONAL_PARTICIPATION_KEYS = getattr(
 )
 pg_compute_progression_ratings = pge.compute_progression_ratings
 pg_build_progression_dashboard_player = pge.build_progression_dashboard_player
+pg_attach_participation_ranks_to_player = pge.attach_participation_ranks_to_player
+pg_enrich_traditional_participation_fields = pge.enrich_traditional_participation_fields
 pg_analyst_metric_label = pge.analyst_metric_label
 pg_metric_tooltip = pge.metric_tooltip
 pg_rank_in_group_label = pge.rank_in_group_label
@@ -3204,6 +3206,14 @@ def _resolve_progression_analysis_player(
     if not player_id:
         return None
 
+    player_id = str(player_id)
+    pass_player = pass_by_id.get(player_id)
+    carry_player = carry_by_id.get(player_id)
+    position_pool = progression_pool_by_position.get(
+        str((progression_by_id.get(player_id) or pass_player or carry_player or {}).get("position_group") or "—"),
+        [],
+    )
+
     player = progression_by_id.get(player_id)
     if player is None or not player.get("eligible_for_rating"):
         pass_player = _resolve_dashboard_player(player_id, pass_by_id, pass_pool_by_position)
@@ -3216,13 +3226,37 @@ def _resolve_progression_analysis_player(
         if pass_player is None and carry_player is None:
             return None
         base = dict(player or pass_player or carry_player or {})
-        return pg_build_progression_dashboard_player(
+        built = pg_build_progression_dashboard_player(
             base,
             pass_player,
             carry_player,
             progression_player=progression_by_id.get(player_id),
         )
-    return dict(player)
+        return pg_attach_participation_ranks_to_player(
+            built,
+            position_pool,
+            pass_by_id=pass_by_id,
+            carry_by_id=carry_by_id,
+            pass_player=pass_player,
+            carry_player=carry_player,
+        )
+
+    resolved = pg_enrich_traditional_participation_fields(
+        dict(player),
+        pass_player=pass_player,
+        carry_player=carry_player,
+    )
+    metric_ranks = resolved.get("metric_ranks") if isinstance(resolved.get("metric_ranks"), dict) else {}
+    if not any(key in metric_ranks for key in TRADITIONAL_PARTICIPATION_KEYS):
+        resolved = pg_attach_participation_ranks_to_player(
+            resolved,
+            position_pool,
+            pass_by_id=pass_by_id,
+            carry_by_id=carry_by_id,
+            pass_player=pass_player,
+            carry_player=carry_player,
+        )
+    return resolved
 
 
 def render_progression_maps_only(player: dict, passes, carries) -> None:

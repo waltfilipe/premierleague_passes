@@ -111,6 +111,10 @@ TRADITIONAL_PARTICIPATION_KEYS: tuple[str, ...] = (
     "crosses_total",
 )
 
+PARTICIPATION_RANK_KEYS: tuple[str, ...] = tuple(
+    dict.fromkeys((*PROGRESSION_PARTICIPATION_KEYS, *TRADITIONAL_PARTICIPATION_KEYS))
+)
+
 METRIC_LABELS: dict[str, str] = {
     **pe.ANALYST_METRIC_LABELS,
     **{f"carry_{key}": ce.METRIC_LABELS.get(key, key.replace("_", " ").title()) for key in CARRY_METRIC_KEYS},
@@ -495,7 +499,11 @@ def build_progression_dashboard_player(
     progression_player: dict | None = None,
 ) -> dict:
     """Align All Progressions card section scores with Passes / Carries tabs."""
-    base = dict(progression_player or player)
+    base = enrich_traditional_participation_fields(
+        dict(progression_player or player),
+        pass_player=pass_player,
+        carry_player=carry_player,
+    )
     section_ratings, section_rating_ranks = _merge_section_ratings_from_sources(
         pass_player,
         carry_player,
@@ -505,6 +513,9 @@ def build_progression_dashboard_player(
         prog_ranks = progression_player["metric_ranks"]
         if "progression_rating" in prog_ranks:
             metric_ranks["progression_rating"] = prog_ranks["progression_rating"]
+        for key in PARTICIPATION_RANK_KEYS:
+            if key in prog_ranks:
+                metric_ranks[key] = prog_ranks[key]
 
     out = {
         **base,
@@ -545,8 +556,45 @@ def _apply_progression_dashboard_ratings(
     ]
 
 
-def enrich_traditional_participation_fields(player: dict) -> dict:
+def enrich_traditional_participation_fields(
+    player: dict,
+    *,
+    pass_player: dict | None = None,
+    carry_player: dict | None = None,
+) -> dict:
     out = dict(player)
+    src_pass = pass_player or {}
+    src_carry = carry_player or {}
+
+    for key in (
+        "passes_total",
+        "passes_completed",
+        "long_balls",
+        "long_balls_completed",
+        "progressive_passes",
+        "final_third_passes",
+        "passes_to_box",
+        "key_passes",
+        "crosses_total",
+        "pass_completion_pct",
+        "long_ball_completion_pct",
+    ):
+        if out.get(key) is None and src_pass.get(key) is not None:
+            out[key] = src_pass[key]
+
+    carry_field_map = {
+        "carry_progressive_carries": "progressive_passes",
+        "very_progressive_carries": "very_progressive_carries",
+        "dribbles_success": "dribbles_success",
+        "dribbles_final_third": "dribbles_final_third",
+        "carries_total": "carries_total",
+        "dribbles_total": "dribbles_total",
+        "dribble_success_pct": "dribble_success_pct",
+    }
+    for merged_key, carry_key in carry_field_map.items():
+        if out.get(merged_key) is None and src_carry.get(carry_key) is not None:
+            out[merged_key] = src_carry[carry_key]
+
     passes_total = float(out.get("passes_total") or 0)
     passes_completed = float(out.get("passes_completed") or 0)
     if out.get("pass_completion_pct") is None:
@@ -562,27 +610,87 @@ def enrich_traditional_participation_fields(player: dict) -> dict:
     return out
 
 
-PARTICIPATION_RANK_KEYS: tuple[str, ...] = tuple(
-    dict.fromkeys((*PROGRESSION_PARTICIPATION_KEYS, *TRADITIONAL_PARTICIPATION_KEYS))
-)
+def _participation_rank_for_player(
+    player: dict,
+    pool: list[dict],
+    keys: tuple[str, ...],
+) -> dict[str, dict]:
+    if not pool:
+        return {}
+    pool_size = len(pool)
+    pid = str(player["player_id"])
+    pool_ids = {str(p["player_id"]) for p in pool}
+    comparison_pool = list(pool)
+    if pid not in pool_ids:
+        comparison_pool = [*pool, player]
+        pool_size = len(comparison_pool)
+
+    ranks: dict[str, dict] = {}
+    for key in keys:
+        value = player.get(key)
+        peer_values = [float(p.get(key) or 0) for p in comparison_pool if str(p["player_id"]) != pid]
+        rank = 1 + sum(1 for peer_value in peer_values if peer_value > float(value or 0))
+        ranks[key] = {"rank": rank, "total": pool_size, "value": value}
+    return ranks
+
+
+def attach_participation_ranks_to_player(
+    player: dict,
+    position_pool: list[dict],
+    *,
+    pass_by_id: dict[str, dict] | None = None,
+    carry_by_id: dict[str, dict] | None = None,
+    pass_player: dict | None = None,
+    carry_player: dict | None = None,
+    keys: tuple[str, ...] = PARTICIPATION_RANK_KEYS,
+) -> dict:
+    pass_by_id = pass_by_id or {}
+    carry_by_id = carry_by_id or {}
+    player_pid = str(player["player_id"])
+
+    def enrich(peer: dict) -> dict:
+        pid = str(peer["player_id"])
+        return enrich_traditional_participation_fields(
+            peer,
+            pass_player=pass_by_id.get(pid) or (pass_player if pid == player_pid else None),
+            carry_player=carry_by_id.get(pid) or (carry_player if pid == player_pid else None),
+        )
+
+    enriched_player = enrich(player)
+    enriched_pool = [enrich(peer) for peer in position_pool]
+    pool_ranks = pe._metric_ranks_for_keys(enriched_pool, keys)
+    metric_ranks = dict(enriched_player.get("metric_ranks") or {})
+    if player_pid in pool_ranks:
+        metric_ranks.update(pool_ranks[player_pid])
+    else:
+        metric_ranks.update(
+            _participation_rank_for_player(enriched_player, enriched_pool, keys)
+        )
+    return {**enriched_player, "metric_ranks": metric_ranks}
 
 
 def _attach_participation_ranks(
     players_by_id: dict[str, dict],
     pool_by_position: dict[str, list[dict]],
+    *,
+    pass_by_id: dict[str, dict] | None = None,
+    carry_by_id: dict[str, dict] | None = None,
 ) -> tuple[dict[str, dict], dict[str, list[dict]]]:
-    updated_by_id = {
-        pid: enrich_traditional_participation_fields(player)
-        for pid, player in players_by_id.items()
-    }
+    pass_by_id = pass_by_id or {}
+    carry_by_id = carry_by_id or {}
+
+    def enrich(player: dict) -> dict:
+        pid = str(player["player_id"])
+        return enrich_traditional_participation_fields(
+            player,
+            pass_player=pass_by_id.get(pid),
+            carry_player=carry_by_id.get(pid),
+        )
+
+    updated_by_id = {pid: enrich(player) for pid, player in players_by_id.items()}
     updated_pools: dict[str, list[dict]] = {}
     for group, pool in pool_by_position.items():
-        enriched_pool = [
-            enrich_traditional_participation_fields(
-                updated_by_id.get(str(player["player_id"]), player)
-            )
-            for player in pool
-        ]
+        enriched_pool = [enrich(player) for player in pool]
         ranks = pe._metric_ranks_for_keys(enriched_pool, PARTICIPATION_RANK_KEYS)
         refreshed_pool: list[dict] = []
         for player in enriched_pool:
@@ -685,6 +793,8 @@ def compute_progression_ratings(
     players_by_id, pool_by_position = _attach_participation_ranks(
         players_by_id,
         pool_by_position,
+        pass_by_id=pass_by_id,
+        carry_by_id=carry_by_id,
     )
     rated_pool = [players_by_id[str(p["player_id"])] for p in rated_pool if str(p["player_id"]) in players_by_id]
 
