@@ -95,6 +95,22 @@ PROGRESSION_PARTICIPATION_KEYS: tuple[str, ...] = (
     "dribble_success_pct",
 )
 
+TRADITIONAL_PARTICIPATION_KEYS: tuple[str, ...] = (
+    "passes_total",
+    "pass_completion_pct",
+    "long_balls",
+    "long_ball_completion_pct",
+    "progressive_passes",
+    "final_third_passes",
+    "passes_to_box",
+    "carry_progressive_carries",
+    "very_progressive_carries",
+    "dribbles_success",
+    "dribbles_final_third",
+    "key_passes",
+    "crosses_total",
+)
+
 METRIC_LABELS: dict[str, str] = {
     **pe.ANALYST_METRIC_LABELS,
     **{f"carry_{key}": ce.METRIC_LABELS.get(key, key.replace("_", " ").title()) for key in CARRY_METRIC_KEYS},
@@ -103,6 +119,15 @@ METRIC_LABELS: dict[str, str] = {
     "dribble_success_pct": "Dribble success rate",
     "carry_impact_passes": "Threat carries (total)",
     "carry_high_impact_passes": "High-threat carries (total)",
+    "passes_total": "Total passes",
+    "pass_completion_pct": "Pass completion %",
+    "long_ball_completion_pct": "Long ball completion %",
+    "passes_to_box": "Passes into box",
+    "carry_progressive_carries": "Progressive carries",
+    "very_progressive_carries": "Very progressive carries",
+    "dribbles_success": "Successful dribbles",
+    "dribbles_final_third": "Successful dribbles (final third)",
+    "crosses_total": "Crosses",
 }
 
 METRIC_TOOLTIPS: dict[str, str] = {
@@ -113,6 +138,15 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "dribble_success_pct": ce.METRIC_TOOLTIPS.get("dribble_success_pct", ""),
     "carry_impact_passes": ce.METRIC_TOOLTIPS.get("impact_passes", ""),
     "carry_high_impact_passes": ce.METRIC_TOOLTIPS.get("high_impact_passes", ""),
+    "passes_total": "All pass attempts in the sample.",
+    "pass_completion_pct": "Share of pass attempts completed successfully.",
+    "long_ball_completion_pct": "Share of long balls (≥30 m) completed successfully.",
+    "passes_to_box": "Completed passes ending inside the penalty area.",
+    "carry_progressive_carries": "Carries that advance the ball meaningfully toward goal.",
+    "very_progressive_carries": "Progressive carries also classified as high-threat.",
+    "dribbles_success": "Total completed dribbles.",
+    "dribbles_final_third": "Completed dribbles starting in the final third.",
+    "crosses_total": "Cross attempts (all outcomes).",
 }
 
 
@@ -133,6 +167,14 @@ def fmt_pct(value: float | None) -> str:
 
 
 def fmt_stat_value(key: str, value) -> str:
+    if key in {
+        "dribbles_success",
+        "dribbles_final_third",
+        "carry_progressive_carries",
+        "very_progressive_carries",
+    }:
+        carry_key = "progressive_passes" if key == "carry_progressive_carries" else key
+        return ce.fmt_stat_value(carry_key, value)
     if key.startswith("carry_"):
         return ce.fmt_stat_value(key.removeprefix("carry_"), value)
     return pe.fmt_stat_value(key, value)
@@ -349,6 +391,10 @@ def merge_progression_player(pass_player: dict, carry_player: dict) -> dict:
     merged["carry_minutes_pct"] = carry_player.get("minutes_pct")
     merged["carry_impact_passes"] = carry_player.get("impact_passes")
     merged["carry_high_impact_passes"] = carry_player.get("high_impact_passes")
+    merged["carry_progressive_carries"] = carry_player.get("progressive_passes")
+    merged["very_progressive_carries"] = carry_player.get("very_progressive_carries")
+    merged["dribbles_success"] = carry_player.get("dribbles_success")
+    merged["dribbles_final_third"] = carry_player.get("dribbles_final_third")
     merged["carry_position_p25_passes"] = carry_player.get("position_p25_passes")
     merged["has_carry_data"] = True
     return merged
@@ -499,6 +545,57 @@ def _apply_progression_dashboard_ratings(
     ]
 
 
+def enrich_traditional_participation_fields(player: dict) -> dict:
+    out = dict(player)
+    passes_total = float(out.get("passes_total") or 0)
+    passes_completed = float(out.get("passes_completed") or 0)
+    if out.get("pass_completion_pct") is None:
+        out["pass_completion_pct"] = (
+            round(passes_completed / passes_total * 100.0, 1) if passes_total else 0.0
+        )
+    long_balls = float(out.get("long_balls") or 0)
+    long_completed = float(out.get("long_balls_completed") or 0)
+    if out.get("long_ball_completion_pct") is None:
+        out["long_ball_completion_pct"] = (
+            round(long_completed / long_balls * 100.0, 1) if long_balls else 0.0
+        )
+    return out
+
+
+PARTICIPATION_RANK_KEYS: tuple[str, ...] = tuple(
+    dict.fromkeys((*PROGRESSION_PARTICIPATION_KEYS, *TRADITIONAL_PARTICIPATION_KEYS))
+)
+
+
+def _attach_participation_ranks(
+    players_by_id: dict[str, dict],
+    pool_by_position: dict[str, list[dict]],
+) -> tuple[dict[str, dict], dict[str, list[dict]]]:
+    updated_by_id = {
+        pid: enrich_traditional_participation_fields(player)
+        for pid, player in players_by_id.items()
+    }
+    updated_pools: dict[str, list[dict]] = {}
+    for group, pool in pool_by_position.items():
+        enriched_pool = [
+            enrich_traditional_participation_fields(
+                updated_by_id.get(str(player["player_id"]), player)
+            )
+            for player in pool
+        ]
+        ranks = pe._metric_ranks_for_keys(enriched_pool, PARTICIPATION_RANK_KEYS)
+        refreshed_pool: list[dict] = []
+        for player in enriched_pool:
+            pid = str(player["player_id"])
+            metric_ranks = dict(player.get("metric_ranks") or {})
+            metric_ranks.update(ranks.get(pid, {}))
+            refreshed = {**player, "metric_ranks": metric_ranks}
+            refreshed_pool.append(refreshed)
+            updated_by_id[pid] = refreshed
+        updated_pools[group] = refreshed_pool
+    return updated_by_id, updated_pools
+
+
 def attach_dual_elite_badges(
     players: list[dict],
     *,
@@ -584,6 +681,12 @@ def compute_progression_ratings(
         group: [players_by_id[str(p["player_id"])] for p in pool if str(p["player_id"]) in players_by_id]
         for group, pool in pool_by_position.items()
     }
+
+    players_by_id, pool_by_position = _attach_participation_ranks(
+        players_by_id,
+        pool_by_position,
+    )
+    rated_pool = [players_by_id[str(p["player_id"])] for p in rated_pool if str(p["player_id"]) in players_by_id]
 
     return rated_pool, players_by_id, pool_by_position
 

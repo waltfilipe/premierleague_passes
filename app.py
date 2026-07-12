@@ -83,6 +83,7 @@ PLAYER_ANALYSIS_SELECT_KEY = "player_analysis_select"
 PLAYER_ANALYSIS_SHOW_MAPS_KEY = "pa_show_maps"
 PLAYER_ANALYSIS_SHOW_SIMILAR_KEY = "pa_show_similar"
 PLAYER_ANALYSIS_SIMILAR_PICK_KEY = "pa_similar_pick"
+PLAYER_ANALYSIS_STATS_MODE_KEY = "pa_stats_mode"
 FIXED_CLASSIFICATION_MODEL = CLASSIFICATION_MODEL_DEFAULT
 FIXED_TIER_MODEL = TIER_MODEL_DEFAULT
 FIXED_XT_SURFACE_MODE = XT_SURFACE_MODE_DEFAULT
@@ -130,6 +131,7 @@ CARRIES_PARTICIPATION_KEYS: tuple[str, ...] = (
 PROGRESSION_DATA_CACHE_VERSION = pge.DATA_CACHE_VERSION
 PROGRESSION_SCOUT_SECTION_SPECS = pge.PROGRESSION_SCOUT_SECTION_SPECS
 PROGRESSION_PARTICIPATION_KEYS = pge.PROGRESSION_PARTICIPATION_KEYS
+TRADITIONAL_PARTICIPATION_KEYS = pge.TRADITIONAL_PARTICIPATION_KEYS
 pg_compute_progression_ratings = pge.compute_progression_ratings
 pg_build_progression_dashboard_player = pge.build_progression_dashboard_player
 pg_analyst_metric_label = pge.analyst_metric_label
@@ -1363,6 +1365,15 @@ st.markdown(
         font-weight: 700;
         text-align: right;
         white-space: nowrap;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.1rem;
+    }
+    .pa-part-val .val-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
     }
     .pa-rating-panel {
         padding: 0.8rem 0.9rem;
@@ -2564,19 +2575,43 @@ def _participation_row_html(
     label: str,
     key: str,
     value: str,
+    metric_ranks: dict,
     *,
+    player: dict,
     label_fn,
     tooltip_fn,
+    rank_in_group_fn=rank_in_group_label,
 ) -> str:
     label_html = (
         _metric_label_html(key, label_fn=label_fn, tooltip_fn=tooltip_fn)
         if key
         else html.escape(label)
     )
+    badge = ""
+    info = metric_ranks.get(key)
+    if info:
+        rank = int(info["rank"])
+        total = int(info["total"])
+        color = rank_color(rank, total)
+        badge = (
+            f'<span class="rank-tip">'
+            f'<span class="rank-badge" style="background:{color}"></span>'
+            f'<span class="rank-tipbox">{rank}/{total}</span>'
+            f"</span>"
+        )
+    rank_sub = _metric_rank_subtitle_html(
+        player, key, metric_ranks, rank_in_group_fn=rank_in_group_fn,
+    )
+    value_inner = (
+        f'<span class="val-wrap">{badge}<span class="pa-part-val-num">{html.escape(value)}</span></span>'
+        f"{rank_sub}"
+        if badge
+        else f'<span class="pa-part-val-num">{html.escape(value)}</span>{rank_sub}'
+    )
     return (
         '<div class="pa-part-row">'
         f'<span class="pa-part-label">{label_html}</span>'
-        f'<span class="pa-part-val">{html.escape(value)}</span>'
+        f'<span class="pa-part-val">{value_inner}</span>'
         "</div>"
     )
 
@@ -2585,6 +2620,7 @@ def _build_player_analysis_identity_card_html(
     player: dict,
     participation_keys: tuple[str, ...],
     *,
+    participation_section_label: str = "Participation",
     label_fn,
     tooltip_fn,
     rank_in_group_fn,
@@ -2597,13 +2633,17 @@ def _build_player_analysis_identity_card_html(
     badges_block = (
         f'<div class="pa-identity-badges">{badges}</div>' if badges else ""
     )
+    metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
     participation_lines = "".join(
         _participation_row_html(
             label_fn(key),
             key,
             _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
+            metric_ranks,
+            player=player,
             label_fn=label_fn,
             tooltip_fn=tooltip_fn,
+            rank_in_group_fn=rank_in_group_fn,
         )
         for key in participation_keys
     )
@@ -2618,7 +2658,7 @@ def _build_player_analysis_identity_card_html(
         f"{badges_block}"
         "</div>"
         '<div class="pa-identity-divider"></div>'
-        '<p class="pa-section-label">Participation</p>'
+        f'<p class="pa-section-label">{html.escape(participation_section_label)}</p>'
         f'<div class="pa-participation-compact">{participation_lines}</div>'
         "</div>"
     )
@@ -2673,6 +2713,7 @@ def _build_player_analysis_layout_html(
     scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
     pillar_labels: dict[str, str] | None = None,
     participation_keys: tuple[str, ...] = PROGRESSION_PARTICIPATION_KEYS,
+    participation_section_label: str = "Participation (xStats)",
     label_fn=pg_analyst_metric_label,
     tooltip_fn=pg_metric_tooltip,
     rank_in_group_fn=pg_rank_in_group_label,
@@ -2699,6 +2740,7 @@ def _build_player_analysis_layout_html(
     identity_card = _build_player_analysis_identity_card_html(
         player,
         participation_keys,
+        participation_section_label=participation_section_label,
         label_fn=label_fn,
         tooltip_fn=tooltip_fn,
         rank_in_group_fn=rank_in_group_fn,
@@ -3373,18 +3415,35 @@ def render_player_analysis_section(
     st.markdown('<div class="pa-toggles">', unsafe_allow_html=True)
     if st.query_params.get("similar_idx") is not None or st.query_params.get("pa_similar") == "1":
         st.session_state[PLAYER_ANALYSIS_SHOW_SIMILAR_KEY] = True
-    toggle_maps, toggle_similar, _ = st.columns([1.1, 1.35, 2.55], gap="small")
+    toggle_maps, toggle_similar, toggle_stats, _ = st.columns([1.1, 1.35, 1.35, 2.2], gap="small")
     with toggle_maps:
         show_maps = st.toggle("Show progression maps", key=PLAYER_ANALYSIS_SHOW_MAPS_KEY)
     with toggle_similar:
         show_similar = st.toggle("Show Serie A comparables", key=PLAYER_ANALYSIS_SHOW_SIMILAR_KEY)
+    with toggle_stats:
+        stats_mode = st.radio(
+            "Stats",
+            options=["xStats", "Traditional"],
+            horizontal=True,
+            key=PLAYER_ANALYSIS_STATS_MODE_KEY,
+            label_visibility="visible",
+        )
     st.markdown("</div>", unsafe_allow_html=True)
+
+    use_traditional = stats_mode == "Traditional"
+    participation_keys = (
+        TRADITIONAL_PARTICIPATION_KEYS if use_traditional else PROGRESSION_PARTICIPATION_KEYS
+    )
+    participation_section_label = (
+        "Traditional stats" if use_traditional else "Participation (xStats)"
+    )
 
     render_player_analysis_profile(
         player,
         scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
         pillar_labels=_PROGRESSION_PILLAR_RADAR_LABELS,
-        participation_keys=PROGRESSION_PARTICIPATION_KEYS,
+        participation_keys=participation_keys,
+        participation_section_label=participation_section_label,
         label_fn=pg_analyst_metric_label,
         tooltip_fn=pg_metric_tooltip,
         rank_in_group_fn=pg_rank_in_group_label,

@@ -970,6 +970,7 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
     positive_dxt_pct = float((xt["delta_xt_v4"] > 0).mean() * 100.0) if len(xt) else 0.0
 
     progressive_passes = int(passes["prog_success"].sum())
+    very_progressive_carries = int((passes["prog_success"] & passes["high_impact_success"]).sum())
     box_mask = _ended_in_penalty_box(passes)
     carries_to_box = int(box_mask.sum())
     carries_impact_to_box = int((box_mask & passes["impact_success"]).sum())
@@ -998,6 +999,7 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
         "carries_to_box": carries_to_box,
         "carries_impact_to_box": carries_impact_to_box,
         "progressive_passes": progressive_passes,
+        "very_progressive_carries": very_progressive_carries,
         "impact_carry_avg_distance_m": impact_carry_avg_distance_m,
     }
 
@@ -2010,7 +2012,8 @@ def fmt_stat_value(key: str, value) -> str:
         return f"{float(value):.1f} m"
     if key in {
         "minutes", "passes_completed", "impact_passes", "high_impact_passes",
-        "carries_total", "dribbles_total",
+        "carries_total", "dribbles_total", "dribbles_success", "dribbles_final_third",
+        "progressive_passes", "very_progressive_carries",
     }:
         return fmt_smart(value, max_decimals=1) if float(value) == int(float(value)) else fmt_smart(value)
     if "per_" in key or key.endswith("_p90"):

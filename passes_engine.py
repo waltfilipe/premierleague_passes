@@ -86,6 +86,9 @@ RATING_SCORE_WORST = 0.3
 FIELD_X, FIELD_Y = 120.0, 80.0
 HALF_LINE_X = FIELD_X / 2
 FINAL_THIRD_LINE_X = 80.0
+PENALTY_BOX_X_MIN = 102.0
+PENALTY_BOX_Y_MIN = 18.0
+PENALTY_BOX_Y_MAX = 62.0
 GOAL_X, GOAL_Y = 120.0, 40.0
 WYSCOUT_PITCH_SIZE = 100.0
 PASS_AGGRESSION_X_MIN = FIELD_X - 30.0
@@ -1026,6 +1029,17 @@ def _zone_metrics(passes: pd.DataFrame, construction: bool) -> dict:
     }
 
 
+def _ended_in_penalty_box(passes: pd.DataFrame) -> pd.Series:
+    if passes.empty:
+        return pd.Series(dtype=bool)
+    return (
+        passes["has_end"].fillna(False).astype(bool)
+        & (passes["x_end"] >= PENALTY_BOX_X_MIN)
+        & (passes["y_end"] >= PENALTY_BOX_Y_MIN)
+        & (passes["y_end"] <= PENALTY_BOX_Y_MAX)
+    )
+
+
 def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
     if passes.empty:
         return {}
@@ -1047,6 +1061,11 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
         (passes["has_end"] & (passes["x_end"] >= FINAL_THIRD_LINE_X) & passes["is_success"]).sum()
     )
     key_passes = int((passes["is_success"] & passes["is_key_pass"]).sum())
+    box_mask = _ended_in_penalty_box(passes)
+    passes_to_box = int((box_mask & passes["is_success"]).sum())
+    is_cross = passes["action_type"].eq("cross") if "action_type" in passes.columns else pd.Series(False, index=passes.index)
+    crosses_total = int(is_cross.sum())
+    crosses_completed = int((is_cross & passes["is_success"]).sum())
 
     return {
         "passes_total": total,
@@ -1072,6 +1091,9 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
         "progressive_passes": progressive_passes,
         "final_third_passes": final_third_passes,
         "key_passes": key_passes,
+        "passes_to_box": passes_to_box,
+        "crosses_total": crosses_total,
+        "crosses_completed": crosses_completed,
     }
 
 
@@ -1124,6 +1146,16 @@ def _long_ball_stats(passes: pd.DataFrame) -> dict:
 
 def compute_player_metrics(passes: pd.DataFrame, minutes_info: dict) -> dict:
     stats = {**_pass_layer_metrics(passes), **_long_ball_stats(passes)}
+    passes_total = stats.get("passes_total") or 0
+    passes_completed = stats.get("passes_completed") or 0
+    stats["pass_completion_pct"] = (
+        round(passes_completed / passes_total * 100.0, 1) if passes_total else 0.0
+    )
+    long_balls = stats.get("long_balls") or 0
+    long_completed = stats.get("long_balls_completed") or 0
+    stats["long_ball_completion_pct"] = (
+        round(long_completed / long_balls * 100.0, 1) if long_balls else 0.0
+    )
     minutes = minutes_info.get("minutes")
     return _derive_rates(stats, minutes)
 
@@ -2164,10 +2196,11 @@ def fmt_stat_value(key: str, value) -> str:
     if key.endswith("_pct"):
         return f"{fmt_smart(value)}%"
     if key in {
-        "minutes", "passes_completed", "long_balls", "long_balls_completed",
+        "minutes", "passes_total", "passes_completed", "long_balls", "long_balls_completed",
         "long_impact_passes", "impact_passes", "high_impact_passes",
         "construction_aip", "aggression_aip", "construction_passes", "aggression_passes",
-        "progressive_passes", "final_third_passes", "key_passes",
+        "progressive_passes", "final_third_passes", "key_passes", "passes_to_box",
+        "crosses_total", "crosses_completed",
     }:
         return fmt_smart(value, max_decimals=1) if float(value) == int(float(value)) else fmt_smart(value)
     if "per_" in key or key.endswith("_p90"):
