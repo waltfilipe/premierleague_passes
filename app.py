@@ -395,7 +395,7 @@ PRES_DEMO_KEY = "pres_active_demo"
 FONT_AWESOME_CDN = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
 PA_RADAR_LINE_COLOR = "#c4b5fd"
 PA_RADAR_FILL_COLOR = "#c4b5fd"
-PLAYER_ANALYSIS_CARD_HEIGHT_PX = 550
+PLAYER_ANALYSIS_CARD_HEIGHT_PX = 560
 
 st.set_page_config(page_title=f"{APP_NAME} | {APP_LEAGUE}", layout="wide", initial_sidebar_state="collapsed")
 
