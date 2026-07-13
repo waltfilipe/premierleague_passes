@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import functools
 import json
 import re
 import urllib.error
@@ -11,11 +10,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pandas as pd
-
 ROOT = Path(__file__).resolve().parent
 CACHE_PATH = ROOT / "data" / "player_profiles_cache.json"
-PLAYER_MATCH_STATS_PATH = ROOT / "player_match_stats.csv"
 THESPORTSDB_SEARCH = "https://www.thesportsdb.com/api/v1/json/3/searchplayers.php"
 THESPORTSDB_LOOKUP = "https://www.thesportsdb.com/api/v1/json/3/lookupplayer.php"
 REQUEST_TIMEOUT_SEC = 8
@@ -23,7 +19,6 @@ REQUEST_TIMEOUT_SEC = 8
 GENERAL_PROFILE_LABELS: dict[str, str] = {
     "minutes": "Minutes played",
     "minutes_pct": "Minutes %",
-    "shirt_number": "Shirt number",
     "age": "Age",
     "height": "Height",
     "dominant_foot": "Dominant foot",
@@ -31,24 +26,6 @@ GENERAL_PROFILE_LABELS: dict[str, str] = {
 }
 
 GENERAL_PROFILE_KEYS: tuple[str, ...] = tuple(GENERAL_PROFILE_LABELS.keys())
-
-PASS_XSTATS_PARTICIPATION_KEYS: tuple[str, ...] = (
-    "minutes",
-    "passes_completed",
-    "minutes_pct",
-    "impact_passes",
-    "high_impact_passes",
-)
-
-CARRY_XSTATS_PARTICIPATION_KEYS: tuple[str, ...] = (
-    "minutes",
-    "carries_total",
-    "minutes_pct",
-    "carry_impact_passes",
-    "carry_high_impact_passes",
-    "dribbles_total",
-    "dribble_success_pct",
-)
 
 PASS_TRADITIONAL_PARTICIPATION_KEYS: tuple[str, ...] = (
     "passes_total",
@@ -206,26 +183,6 @@ def _fetch_profile_from_thesportsdb(player_name: str, team: str) -> dict:
     }
 
 
-@functools.lru_cache(maxsize=1)
-def _load_shirt_numbers() -> dict[str, int | None]:
-    if not PLAYER_MATCH_STATS_PATH.exists():
-        return {}
-    stats = pd.read_csv(PLAYER_MATCH_STATS_PATH, usecols=["player_id", "shirt_number"], low_memory=False)
-    if stats.empty:
-        return {}
-    stats["player_id"] = stats["player_id"].astype(str)
-    stats["shirt_number"] = pd.to_numeric(stats["shirt_number"], errors="coerce")
-    out: dict[str, int | None] = {}
-    for pid, grp in stats.groupby("player_id", sort=False):
-        nums = grp["shirt_number"].dropna()
-        if nums.empty:
-            out[pid] = None
-        else:
-            mode = nums.mode()
-            out[pid] = int(mode.iloc[0]) if not mode.empty else int(nums.iloc[-1])
-    return out
-
-
 def get_player_profile(player_id: str, player_name: str, team: str) -> dict:
     """Return cached or freshly fetched profile fields for a player."""
     pid = str(player_id or "").strip()
@@ -235,7 +192,6 @@ def get_player_profile(player_id: str, player_name: str, team: str) -> dict:
         return dict(cached)
 
     profile: dict = {
-        "shirt_number": _load_shirt_numbers().get(pid),
         "photo_url": None,
         "height": None,
         "dominant_foot": None,
@@ -270,21 +226,3 @@ def enrich_player_general_profile(player: dict) -> dict:
         if value is not None:
             out[key] = value
     return out
-
-
-def participation_keys_for_focus(
-    *,
-    pillar_focus: str,
-    use_traditional: bool,
-) -> tuple[str, ...]:
-    focus = str(pillar_focus or "pass").strip().lower()
-    if focus.startswith("car"):
-        return CARRY_TRADITIONAL_PARTICIPATION_KEYS if use_traditional else CARRY_XSTATS_PARTICIPATION_KEYS
-    return PASS_TRADITIONAL_PARTICIPATION_KEYS if use_traditional else PASS_XSTATS_PARTICIPATION_KEYS
-
-
-def participation_section_label_for_focus(*, pillar_focus: str, use_traditional: bool) -> str:
-    focus = str(pillar_focus or "pass").strip().lower()
-    if focus.startswith("car"):
-        return "Carry volume" if not use_traditional else "Carry (traditional)"
-    return "Pass volume (xStats)" if not use_traditional else "Pass volume (traditional)"

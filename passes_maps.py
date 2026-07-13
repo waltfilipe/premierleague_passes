@@ -575,6 +575,84 @@ def draw_action_origin_heatmap(
     return fig
 
 
+def draw_action_origin_smooth_heatmap(
+    passes,
+    carries=None,
+    player_name: str = "",
+    *,
+    profile: bool = False,
+    completed_only: bool = True,
+):
+    """Smooth origin density heatmap (SofaScore-style, no visible grid cells)."""
+    from scipy.ndimage import gaussian_filter
+
+    if profile:
+        figsize = (3.15, 2.15)
+        dpi = 200
+    else:
+        figsize = (FIG_W_COMPACT, FIG_H_COMPACT)
+        dpi = FIG_DPI_COMPACT
+
+    fig, ax, pitch = _base_pitch(figsize=figsize, dpi=dpi)
+    grid_x = 96
+    grid_y = 64
+    x_bins = np.linspace(0.0, FIELD_X, grid_x + 1)
+    y_bins = np.linspace(0.0, FIELD_Y, grid_y + 1)
+    density = np.zeros((grid_y, grid_x), dtype=float)
+
+    def _accumulate(frame, *, won_only: bool) -> None:
+        nonlocal density
+        if frame is None or frame.empty:
+            return
+        work = frame
+        if won_only and "is_won" in work.columns:
+            work = work[work["is_won"].astype(bool)]
+        if work.empty or "x_start" not in work.columns or "y_start" not in work.columns:
+            return
+        hist, _, _ = np.histogram2d(
+            work["y_start"].to_numpy(),
+            work["x_start"].to_numpy(),
+            bins=[y_bins, x_bins],
+        )
+        density += hist
+
+    _accumulate(passes, won_only=completed_only)
+    if carries is not None and not carries.empty:
+        carry_work = carries
+        if "is_dribble" in carry_work.columns:
+            carry_work = carry_work[~carry_work["is_dribble"].astype(bool)]
+        if "has_end" in carry_work.columns:
+            carry_work = carry_work[carry_work["has_end"].astype(bool)]
+        _accumulate(carry_work, won_only=False)
+
+    if density.max() > 0:
+        density = gaussian_filter(density, sigma=2.8)
+        density = density / max(float(density.max()), 1e-9)
+
+    pitch.draw(ax=ax)
+    if density.max() > 0:
+        ax.imshow(
+            density,
+            origin="lower",
+            extent=[0.0, FIELD_X, 0.0, FIELD_Y],
+            cmap=CMAP_PASS_DEST,
+            alpha=0.72,
+            aspect="auto",
+            zorder=1,
+            vmin=0.0,
+            vmax=1.0,
+            interpolation="bilinear",
+        )
+
+    if not profile:
+        title = f"{player_name}\nOrigin · passes + carries" if player_name else "Origin · passes + carries"
+        ax.set_title(title, color="white", fontsize=8.0, pad=5)
+    else:
+        ax.set_title("")
+    ax.set_axis_off()
+    return fig
+
+
 def draw_xt_surface_heatmap(
     *,
     cols: int = XT_HEATMAP_COLS_DEFAULT,

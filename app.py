@@ -63,6 +63,7 @@ from comparison_config import (
 from passes_maps import (
     draw_all_completed_passes_map,
     draw_action_origin_heatmap,
+    draw_action_origin_smooth_heatmap,
     draw_impact_pass_map,
     draw_pass_destination_heatmap,
     draw_pass_origin_heatmap,
@@ -100,8 +101,7 @@ PLAYER_ANALYSIS_SELECT_KEY = "player_analysis_select"
 PLAYER_ANALYSIS_SHOW_MAPS_KEY = "pa_show_maps"
 PLAYER_ANALYSIS_SHOW_SIMILAR_KEY = "pa_show_similar"
 PLAYER_ANALYSIS_SIMILAR_PICK_KEY = "pa_similar_pick"
-PLAYER_ANALYSIS_STATS_MODE_KEY = "pa_stats_mode"
-PLAYER_ANALYSIS_PILLAR_FOCUS_KEY = "pa_pillar_focus"
+PLAYER_ANALYSIS_VIEW_KEY = "pa_view_mode"
 PLAYER_ANALYSIS_POSITION_KEY = "pa_position_filter"
 PLAYER_ANALYSIS_POSITION_FILTERS: tuple[tuple[str, str], ...] = (
     ("Zagueiros", "centerbacks"),
@@ -331,13 +331,25 @@ _CARRIES_PILLAR_RADAR_LABELS: dict[str, str] = {
 _PROGRESSION_PILLAR_RADAR_LABELS: dict[str, str] = {
     "pass_metrics_absolute": "P-P90",
     "pass_metrics_relative": "P-Eff",
-    "pass_long_balls": "P-Vrt",
     "pass_construction": "P-Cst",
     "pass_aggression": "P-Atq",
     "carry_metrics_absolute": "C-Vol",
     "carry_metrics_relative": "C-Eff",
     "carry_general_carries_dribbles": "C-FT",
 }
+PA_RADAR_EXCLUDED_SECTIONS: frozenset[str] = frozenset({"pass_long_balls"})
+PA_RADAR_PASS_COLOR = "#60a5fa"
+PA_RADAR_CARRY_COLOR = "#34d399"
+PA_RADAR_FILL_NEUTRAL = "#c4b5fd"
+
+
+def _progression_radar_section_specs(
+    scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
+) -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
+    return tuple(
+        spec for spec in scout_section_specs
+        if spec[0] not in PA_RADAR_EXCLUDED_SECTIONS
+    )
 
 
 def _pillar_radar_b64(
@@ -364,10 +376,14 @@ def _pillar_radar_b64(
     section_ratings = player.get("section_ratings") if isinstance(player.get("section_ratings"), dict) else {}
     labels: list[str] = []
     values: list[float] = []
+    section_keys: list[str] = []
     for section_key, _, _, _ in scout_section_specs:
+        if section_key in PA_RADAR_EXCLUDED_SECTIONS:
+            continue
         score = section_ratings.get(section_key)
         if score is None:
             continue
+        section_keys.append(section_key)
         labels.append(label_map.get(section_key, section_key[:6]))
         values.append(float(score) * 10.0)
     if len(values) < 3:
@@ -383,8 +399,8 @@ def _pillar_radar_b64(
         confidence_passes=confidence_passes,
     )
     line_alpha = 0.55 if low_sample else 0.95
-    fill_alpha = 0.18 if low_sample else 0.32
-    radar_fill = fill_color or line_color
+    fill_alpha = 0.12 if low_sample else 0.2
+    radar_fill = fill_color or PA_RADAR_FILL_NEUTRAL
 
     fig, ax = plt.subplots(
         figsize=radar_figsize,
@@ -395,13 +411,42 @@ def _pillar_radar_b64(
     ax.set_facecolor("none")
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
-    ax.plot(angles_closed, values_closed, color=line_color, linewidth=2.4, alpha=line_alpha)
-    ax.fill(angles_closed, values_closed, color=radar_fill, alpha=fill_alpha)
+    ax.fill(angles_closed, values_closed, color=radar_fill, alpha=fill_alpha, zorder=2)
+    for i in range(count):
+        j = (i + 1) % count
+        is_pass = section_keys[i].startswith("pass_")
+        seg_color = PA_RADAR_PASS_COLOR if is_pass else PA_RADAR_CARRY_COLOR
+        seg_style = "-" if is_pass else (0, (5, 3))
+        ax.plot(
+            [angles[i], angles[j]],
+            [values[i], values[j]],
+            color=seg_color,
+            linewidth=2.8,
+            linestyle=seg_style,
+            alpha=line_alpha,
+            zorder=4,
+        )
+    for angle, value, section_key in zip(angles, values, section_keys):
+        is_pass = section_key.startswith("pass_")
+        marker_color = PA_RADAR_PASS_COLOR if is_pass else PA_RADAR_CARRY_COLOR
+        ax.plot(
+            angle,
+            value,
+            marker="o",
+            color=marker_color,
+            markersize=5.5,
+            markeredgecolor="#0f172a",
+            markeredgewidth=0.7,
+            alpha=line_alpha,
+            zorder=5,
+        )
     ax.set_ylim(4.0, 8.0)
     ax.set_yticks([5, 6, 7])
     ax.set_yticklabels([])
     ax.set_xticks(angles)
-    ax.set_xticklabels(labels, fontsize=9.5, color="#cbd5e1", fontweight=600)
+    ax.set_xticklabels(labels, fontsize=9.0, fontweight=600)
+    for tick_label, section_key in zip(ax.get_xticklabels(), section_keys):
+        tick_label.set_color(PA_RADAR_PASS_COLOR if section_key.startswith("pass_") else PA_RADAR_CARRY_COLOR)
     ax.tick_params(axis="x", pad=10)
     ax.grid(color="#334155", alpha=0.5, linewidth=0.7)
     ax.spines["polar"].set_color("#334155")
@@ -434,6 +479,10 @@ def _pillar_radar_card_html(player: dict, **kwargs) -> str:
         '<div class="player-card radar-card">'
         '<div class="radar-card-title">Pillar profile</div>'
         f'<div class="radar-card-body">{inner}</div>'
+        '<div class="pa-radar-legend">'
+        '<span class="pa-radar-legend-item pa-radar-legend-pass">Passes</span>'
+        '<span class="pa-radar-legend-item pa-radar-legend-carry">Carries</span>'
+        "</div>"
         "</div>"
     )
 
@@ -441,8 +490,6 @@ APP_NAME = "Pass Scout"
 APP_LEAGUE = "Premier League"
 PRES_DEMO_KEY = "pres_active_demo"
 FONT_AWESOME_CDN = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
-PA_RADAR_LINE_COLOR = "#c4b5fd"
-PA_RADAR_FILL_COLOR = "#c4b5fd"
 PLAYER_ANALYSIS_CARD_HEIGHT_PX = 560
 
 st.set_page_config(page_title=f"{APP_NAME} | {APP_LEAGUE}", layout="wide", initial_sidebar_state="collapsed")
@@ -1587,6 +1634,56 @@ st.markdown(
         max-width: 100%;
         max-height: 100%;
         object-fit: contain;
+    }
+    .pa-radar-legend {
+        display: flex;
+        justify-content: center;
+        gap: 0.85rem;
+        margin-top: 0.2rem;
+        font-size: 0.66rem;
+        font-weight: 600;
+        color: #94a3b8;
+        letter-spacing: 0.03em;
+    }
+    .pa-radar-legend-item::before {
+        content: "";
+        display: inline-block;
+        width: 16px;
+        height: 0;
+        margin-right: 0.3rem;
+        vertical-align: middle;
+        border-top-width: 2.5px;
+        border-top-style: solid;
+    }
+    .pa-radar-legend-pass::before {
+        border-top-color: #60a5fa;
+    }
+    .pa-radar-legend-carry::before {
+        border-top-color: #34d399;
+        border-top-style: dashed;
+    }
+    .pa-origin-heatmap-wrap {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 0.25rem;
+        overflow: hidden;
+    }
+    .pa-origin-heatmap {
+        width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 8px;
+        display: block;
+    }
+    .pa-left-card-body {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        gap: 0.25rem;
     }
     .pa-pillars-stack {
         display: flex;
@@ -2789,9 +2886,7 @@ def _general_profile_value_html(player: dict, key: str, *, fmt_pct_fn) -> str:
     if key == "minutes_pct":
         return html.escape(fmt_pct_fn(value))
     if key == "minutes":
-        return html.escape(f"{int(round(float(value))):,}")
-    if key == "shirt_number":
-        return html.escape(str(int(value)))
+        return html.escape(str(int(round(float(value)))))
     if key == "age":
         return html.escape(str(int(value)))
     return html.escape(str(value))
@@ -2817,9 +2912,13 @@ def _player_photo_html(player: dict) -> str:
     return f'<div class="pa-identity-photo-placeholder">{html.escape(initials or "?")}</div>'
 
 
-def _build_player_analysis_identity_card_html(
+def _build_player_analysis_left_card_html(
     player: dict,
     *,
+    view_mode: str = "general",
+    origin_heatmap_b64: str | None = None,
+    stat_keys: tuple[str, ...] = (),
+    section_label: str = "Traditional stats",
     label_fn,
     tooltip_fn,
     rank_in_group_fn,
@@ -2832,13 +2931,49 @@ def _build_player_analysis_identity_card_html(
     badges_block = (
         f'<div class="pa-identity-badges">{badges}</div>' if badges else ""
     )
-    profile_lines = "".join(
-        _general_profile_row_html(
-            pp.GENERAL_PROFILE_LABELS[key],
-            _general_profile_value_html(player, key, fmt_pct_fn=fmt_pct_fn),
+    mode = str(view_mode or "general").strip().lower()
+
+    if mode == "general":
+        profile_lines = "".join(
+            _general_profile_row_html(
+                pp.GENERAL_PROFILE_LABELS[key],
+                _general_profile_value_html(player, key, fmt_pct_fn=fmt_pct_fn),
+            )
+            for key in pp.GENERAL_PROFILE_KEYS
         )
-        for key in pp.GENERAL_PROFILE_KEYS
-    )
+        heatmap_block = ""
+        if origin_heatmap_b64:
+            heatmap_block = (
+                '<div class="pa-origin-heatmap-wrap">'
+                f'<img class="pa-origin-heatmap" src="data:image/png;base64,{origin_heatmap_b64}" '
+                'alt="Pass and carry origin heatmap" />'
+                "</div>"
+            )
+        body = (
+            '<p class="pa-section-label">General profile</p>'
+            f'<div class="pa-left-card-body">'
+            f'<div class="pa-participation-compact">{profile_lines}</div>'
+            f"{heatmap_block}"
+            "</div>"
+        )
+    else:
+        metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
+        stat_lines = "".join(
+            _participation_row_html(
+                label_fn(key),
+                key,
+                _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
+                metric_ranks,
+                label_fn=label_fn,
+                tooltip_fn=tooltip_fn,
+            )
+            for key in stat_keys
+        )
+        body = (
+            f'<p class="pa-section-label">{html.escape(section_label)}</p>'
+            f'<div class="pa-participation-compact">{stat_lines}</div>'
+        )
+
     return (
         '<div class="player-card pa-identity-card">'
         '<div class="pa-identity-top">'
@@ -2855,8 +2990,7 @@ def _build_player_analysis_identity_card_html(
         "</div>"
         "</div>"
         '<div class="pa-identity-divider"></div>'
-        '<p class="pa-section-label">General profile</p>'
-        f'<div class="pa-participation-compact">{profile_lines}</div>'
+        f"{body}"
         "</div>"
     )
 
@@ -2865,39 +2999,16 @@ def _build_player_analysis_pillars_html(
     player: dict,
     scout_section_specs,
     *,
-    pillar_focus: str = "pass",
-    participation_keys: tuple[str, ...] = (),
-    participation_section_label: str = "",
+    view_mode: str = "general",
     label_fn,
     tooltip_fn,
     rank_in_group_fn,
     fmt_pct_fn,
     fmt_stat_fn,
 ) -> str:
-    metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
-    focus = str(pillar_focus or "pass").strip().lower()
-    pass_active = not focus.startswith("car")
-    carry_active = focus.startswith("car")
-
-    def _participation_block_html() -> str:
-        if not participation_keys:
-            return ""
-        participation_lines = "".join(
-            _participation_row_html(
-                label_fn(key),
-                key,
-                _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
-                metric_ranks,
-                label_fn=label_fn,
-                tooltip_fn=tooltip_fn,
-            )
-            for key in participation_keys
-        )
-        label = participation_section_label or "Volume"
-        return (
-            f'<p class="pa-section-label">{html.escape(label)}</p>'
-            f'<div class="pa-participation-compact pa-pillar-participation">{participation_lines}</div>'
-        )
+    focus = str(view_mode or "general").strip().lower()
+    blur_pass = focus == "carry"
+    blur_carry = focus == "pass"
 
     def _accordions_for(sections: tuple) -> str:
         return "".join(
@@ -2920,18 +3031,16 @@ def _build_player_analysis_pillars_html(
     carry_sections = tuple(s for s in scout_section_specs if str(s[0]).startswith("carry_"))
     groups = []
     if pass_sections:
-        pass_blur = "" if pass_active else " pa-pillar-blurred"
-        pass_body = _participation_block_html() if pass_active else ""
+        pass_blur = " pa-pillar-blurred" if blur_pass else ""
         groups.append(
             f'<p class="pa-pillar-group-label{pass_blur}">Passing</p>'
-            f'<div class="pa-pillar-group{pass_blur}">{pass_body}{_accordions_for(pass_sections)}</div>'
+            f'<div class="pa-pillar-group{pass_blur}">{_accordions_for(pass_sections)}</div>'
         )
     if carry_sections:
-        carry_blur = "" if carry_active else " pa-pillar-blurred"
-        carry_body = _participation_block_html() if carry_active else ""
+        carry_blur = " pa-pillar-blurred" if blur_carry else ""
         groups.append(
             f'<p class="pa-pillar-group-label{carry_blur}">Carrying</p>'
-            f'<div class="pa-pillar-group{carry_blur}">{carry_body}{_accordions_for(carry_sections)}</div>'
+            f'<div class="pa-pillar-group{carry_blur}">{_accordions_for(carry_sections)}</div>'
         )
     return "".join(groups)
 
@@ -2941,9 +3050,10 @@ def _build_player_analysis_layout_html(
     *,
     scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
     pillar_labels: dict[str, str] | None = None,
-    pillar_focus: str = "pass",
-    participation_keys: tuple[str, ...] = (),
-    participation_section_label: str = "",
+    view_mode: str = "general",
+    origin_heatmap_b64: str | None = None,
+    stat_keys: tuple[str, ...] = (),
+    section_label: str = "Traditional stats",
     label_fn=pg_analyst_metric_label,
     tooltip_fn=pg_metric_tooltip,
     rank_in_group_fn=pg_rank_in_group_label,
@@ -2956,19 +3066,24 @@ def _build_player_analysis_layout_html(
 ) -> str:
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
     layout_style = f"--pa-card-h: {PLAYER_ANALYSIS_CARD_HEIGHT_PX}px;"
+    radar_specs = _progression_radar_section_specs(scout_section_specs)
     rating_panel = _player_analysis_rating_panel_html(player, metric_ranks)
     radar_card = _pillar_radar_card_html(
         player,
-        scout_section_specs=scout_section_specs,
+        scout_section_specs=radar_specs,
         pillar_labels=pillar_labels or _PROGRESSION_PILLAR_RADAR_LABELS,
         confidence_minutes=confidence_minutes,
         confidence_passes=confidence_passes,
         radar_figsize=(3.5, 3.5),
-        line_color=PA_RADAR_LINE_COLOR,
-        fill_color=PA_RADAR_FILL_COLOR,
+        line_color=PA_RADAR_PASS_COLOR,
+        fill_color=PA_RADAR_FILL_NEUTRAL,
     )
-    identity_card = _build_player_analysis_identity_card_html(
+    left_card = _build_player_analysis_left_card_html(
         player,
+        view_mode=view_mode,
+        origin_heatmap_b64=origin_heatmap_b64,
+        stat_keys=stat_keys,
+        section_label=section_label,
         label_fn=label_fn,
         tooltip_fn=tooltip_fn,
         rank_in_group_fn=rank_in_group_fn,
@@ -2978,9 +3093,7 @@ def _build_player_analysis_layout_html(
     pillar_html = _build_player_analysis_pillars_html(
         player,
         scout_section_specs,
-        pillar_focus=pillar_focus,
-        participation_keys=participation_keys,
-        participation_section_label=participation_section_label,
+        view_mode=view_mode,
         label_fn=label_fn,
         tooltip_fn=tooltip_fn,
         rank_in_group_fn=rank_in_group_fn,
@@ -2989,7 +3102,7 @@ def _build_player_analysis_layout_html(
     )
     return (
         f'<div class="pa-layout" style="{layout_style}">'
-        f'<div class="pa-col pa-col-identity">{identity_card}</div>'
+        f'<div class="pa-col pa-col-identity">{left_card}</div>'
         '<div class="pa-col pa-col-score">'
         '<div class="pa-score-stack">'
         f"{rating_panel}"
@@ -3710,43 +3823,53 @@ def render_player_analysis_section(
 
     st.markdown('<div class="pa-shell">', unsafe_allow_html=True)
 
-    filter_cols = st.columns([0.92, 1.35, 0.78], gap="small")
-    with filter_cols[0]:
-        pillar_focus_label = st.radio(
-            "Focus",
-            options=["Passes", "Carries"],
-            horizontal=True,
-            key=PLAYER_ANALYSIS_PILLAR_FOCUS_KEY,
-            label_visibility="visible",
+    view_label = st.radio(
+        "View",
+        options=["General Infos", "Passes", "Carries"],
+        horizontal=True,
+        key=PLAYER_ANALYSIS_VIEW_KEY,
+        label_visibility="visible",
+    )
+    view_mode = {
+        "General Infos": "general",
+        "Passes": "pass",
+        "Carries": "carry",
+    }[view_label]
+
+    origin_heatmap_b64: str | None = None
+    if view_mode == "general":
+        passes_df = passes_by_player.get(player_id)
+        carries_df = carries_by_player.get(player_id)
+        has_actions = (
+            (passes_df is not None and not passes_df.empty)
+            or (carries_df is not None and not carries_df.empty)
         )
-    with filter_cols[1]:
-        use_traditional = False
-        if pillar_focus_label == "Passes":
-            stats_mode = st.radio(
-                "Pass stats",
-                options=["xStats", "Traditional"],
-                horizontal=True,
-                key=PLAYER_ANALYSIS_STATS_MODE_KEY,
-                label_visibility="visible",
+        if has_actions:
+            fig_origin = draw_action_origin_smooth_heatmap(
+                passes_df,
+                carries_df,
+                str(player.get("player_name", "")),
+                profile=True,
             )
-            use_traditional = stats_mode == "Traditional"
-    pillar_focus = "carry" if pillar_focus_label == "Carries" else "pass"
-    participation_keys = pp.participation_keys_for_focus(
-        pillar_focus=pillar_focus,
-        use_traditional=use_traditional,
-    )
-    participation_section_label = pp.participation_section_label_for_focus(
-        pillar_focus=pillar_focus,
-        use_traditional=use_traditional,
-    )
+            origin_heatmap_b64 = _fig_to_b64(fig_origin)
+
+    stat_keys: tuple[str, ...] = ()
+    section_label = "Traditional stats"
+    if view_mode == "pass":
+        stat_keys = pp.PASS_TRADITIONAL_PARTICIPATION_KEYS
+        section_label = "Traditional pass stats"
+    elif view_mode == "carry":
+        stat_keys = pp.CARRY_TRADITIONAL_PARTICIPATION_KEYS
+        section_label = "Traditional carry stats"
 
     render_player_analysis_profile(
         player,
         scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
         pillar_labels=_PROGRESSION_PILLAR_RADAR_LABELS,
-        pillar_focus=pillar_focus,
-        participation_keys=participation_keys,
-        participation_section_label=participation_section_label,
+        view_mode=view_mode,
+        origin_heatmap_b64=origin_heatmap_b64,
+        stat_keys=stat_keys,
+        section_label=section_label,
         label_fn=pg_analyst_metric_label,
         tooltip_fn=pg_metric_tooltip,
         rank_in_group_fn=pg_rank_in_group_label,
@@ -3907,6 +4030,18 @@ def _render_comparison_maps_row(
             st.pyplot(fig, clear_figure=True, use_container_width=True)
         else:
             st.caption("No passes or carries.")
+
+
+def _fig_to_b64(fig) -> str:
+    import base64
+    import io
+
+    import matplotlib.pyplot as plt
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=fig.dpi, facecolor=fig.get_facecolor(), bbox_inches="tight", pad_inches=0.04)
+    plt.close(fig)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def _fig_to_blurred_b64(fig, *, blur_radius: int = 7) -> str:
