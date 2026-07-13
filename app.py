@@ -100,6 +100,14 @@ PLAYER_ANALYSIS_SHOW_MAPS_KEY = "pa_show_maps"
 PLAYER_ANALYSIS_SHOW_SIMILAR_KEY = "pa_show_similar"
 PLAYER_ANALYSIS_SIMILAR_PICK_KEY = "pa_similar_pick"
 PLAYER_ANALYSIS_STATS_MODE_KEY = "pa_stats_mode"
+PLAYER_ANALYSIS_POSITION_KEY = "pa_position_filter"
+PLAYER_ANALYSIS_POSITION_FILTERS: tuple[tuple[str, str], ...] = (
+    ("Zagueiros", "centerbacks"),
+    ("Laterais", "fullbacks"),
+    ("Meio Campistas", "midfielders"),
+    ("Extremos", "wingers"),
+    ("Atacantes", "strikers"),
+)
 FIXED_CLASSIFICATION_MODEL = CLASSIFICATION_MODEL_DEFAULT
 FIXED_TIER_MODEL = TIER_MODEL_DEFAULT
 FIXED_XT_SURFACE_MODE = XT_SURFACE_MODE_DEFAULT
@@ -1840,6 +1848,48 @@ def _player_options(rated: list[dict]) -> list[tuple[str, str, str, str]]:
     return [(pid, name, team, f"{name} ({team})") for pid, name, team in rows]
 
 
+def _player_analysis_position_group(position_label: str) -> str:
+    for label, group in PLAYER_ANALYSIS_POSITION_FILTERS:
+        if label == position_label:
+            return group
+    return PLAYER_ANALYSIS_POSITION_FILTERS[0][1]
+
+
+def _player_analysis_options(
+    players: list[dict],
+    progression_by_id: dict[str, dict],
+    *,
+    position_group: str,
+) -> list[tuple[str, str, str, str]]:
+    """Player slicer options ranked by overall (progression) rating within a position group."""
+    ranked_rows: list[tuple[str, str, str, float]] = []
+    for player in players:
+        if str(player.get("position_group") or "") != position_group:
+            continue
+        pid = str(player["player_id"])
+        prog = progression_by_id.get(pid, {})
+        rating = prog.get("progression_rating")
+        if rating is None:
+            rating = prog.get("pass_rating") or player.get("pass_rating")
+        ranked_rows.append((
+            pid,
+            str(player.get("player_name", "—")),
+            str(player.get("team", "—")),
+            float(rating) if rating is not None else -1.0,
+        ))
+
+    ranked_rows.sort(key=lambda row: (-row[3], _norm(row[1])))
+    return [
+        (
+            pid,
+            name,
+            team,
+            f"#{idx} {name} ({team}) · {fmt_rating_score(rating) if rating >= 0 else '—'}",
+        )
+        for idx, (pid, name, team, rating) in enumerate(ranked_rows, start=1)
+    ]
+
+
 def _sync_player_selection(
     players_by_id: dict[str, dict],
     label_by_id: dict[str, str],
@@ -3320,10 +3370,18 @@ def _sync_player_analysis_selection(
     qp = st.query_params.get("player_id")
     qp_id = str(qp) if qp else None
     if qp_id and qp_id in players_by_id:
+        player = players_by_id[qp_id]
+        group = str(player.get("position_group") or "")
+        for label, grp in PLAYER_ANALYSIS_POSITION_FILTERS:
+            if grp == group:
+                if st.session_state.get("_pa_url_player_id") != qp_id:
+                    st.session_state[PLAYER_ANALYSIS_POSITION_KEY] = label
+                break
         if st.session_state.get("_pa_url_player_id") != qp_id:
             st.session_state["_pa_url_player_id"] = qp_id
             st.session_state["map_player_id"] = qp_id
-            st.session_state[PLAYER_ANALYSIS_SELECT_KEY] = label_by_id[qp_id]
+            if qp_id in label_by_id:
+                st.session_state[PLAYER_ANALYSIS_SELECT_KEY] = label_by_id[qp_id]
     elif qp_id is None:
         st.session_state.pop("_pa_url_player_id", None)
 
@@ -3450,15 +3508,37 @@ def render_player_analysis_section(
         st.info("No players available.")
         return
 
-    options = _player_options(all_players)
+    players_by_id = {str(p["player_id"]): p for p in all_players}
+
+    _sync_player_analysis_selection(players_by_id, {})
+
+    position_labels = [label for label, _ in PLAYER_ANALYSIS_POSITION_FILTERS]
+    if PLAYER_ANALYSIS_POSITION_KEY not in st.session_state:
+        st.session_state[PLAYER_ANALYSIS_POSITION_KEY] = position_labels[0]
+
+    selected_position_label = st.selectbox(
+        "Posição",
+        options=position_labels,
+        key=PLAYER_ANALYSIS_POSITION_KEY,
+    )
+    position_group = _player_analysis_position_group(selected_position_label)
+    prev_position_group = st.session_state.get("pa_last_position_group")
+    if prev_position_group != position_group:
+        st.session_state["pa_last_position_group"] = position_group
+        st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
+
+    options = _player_analysis_options(
+        all_players,
+        progression_by_id,
+        position_group=position_group,
+    )
     if not options:
-        st.info("No players available for analysis.")
+        st.info(f"No players available for {selected_position_label}.")
         return
 
     labels = [o[3] for o in options]
     id_by_label = {o[3]: o[0] for o in options}
     label_by_id = {o[0]: o[3] for o in options}
-    players_by_id = {str(p["player_id"]): p for p in all_players}
 
     _sync_player_analysis_selection(players_by_id, label_by_id)
 
