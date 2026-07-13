@@ -68,6 +68,7 @@ from passes_maps import (
     draw_pass_origin_heatmap,
 )
 import carries_engine as ce
+import player_profiles as pp
 from carries_maps import (
     draw_all_carries_map,
     draw_dribble_map,
@@ -100,6 +101,7 @@ PLAYER_ANALYSIS_SHOW_MAPS_KEY = "pa_show_maps"
 PLAYER_ANALYSIS_SHOW_SIMILAR_KEY = "pa_show_similar"
 PLAYER_ANALYSIS_SIMILAR_PICK_KEY = "pa_similar_pick"
 PLAYER_ANALYSIS_STATS_MODE_KEY = "pa_stats_mode"
+PLAYER_ANALYSIS_PILLAR_FOCUS_KEY = "pa_pillar_focus"
 PLAYER_ANALYSIS_POSITION_KEY = "pa_position_filter"
 PLAYER_ANALYSIS_POSITION_FILTERS: tuple[tuple[str, str], ...] = (
     ("Zagueiros", "centerbacks"),
@@ -1364,6 +1366,44 @@ st.markdown(
         overflow: hidden;
         box-sizing: border-box;
     }
+    .pa-identity-header {
+        display: flex;
+        gap: 0.75rem;
+        align-items: flex-start;
+    }
+    .pa-identity-photo-wrap {
+        flex-shrink: 0;
+        width: 74px;
+        height: 74px;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #334155;
+        background: #0f172a;
+    }
+    .pa-identity-photo {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .pa-identity-photo-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        color: #475569;
+        font-size: 1.45rem;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+    }
+    .pa-identity-head-text {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        min-width: 0;
+        flex: 1;
+    }
     .pa-identity-top {
         display: flex;
         flex-direction: column;
@@ -1571,6 +1611,19 @@ st.markdown(
         display: flex;
         flex-direction: column;
         gap: 0.38rem;
+        transition: filter 0.2s ease, opacity 0.2s ease;
+    }
+    .pa-pillar-group.pa-pillar-blurred,
+    .pa-pillar-group-label.pa-pillar-blurred {
+        filter: blur(5px);
+        opacity: 0.42;
+        pointer-events: none;
+        user-select: none;
+    }
+    .pa-pillar-participation {
+        margin-bottom: 0.2rem;
+        padding-bottom: 0.15rem;
+        border-bottom: 1px solid #243049;
     }
     .pa-pillars-stack .grade-accordion {
         margin-bottom: 0;
@@ -2729,11 +2782,44 @@ def _participation_row_html(
     )
 
 
+def _general_profile_value_html(player: dict, key: str, *, fmt_pct_fn) -> str:
+    value = player.get(key)
+    if value is None or value == "":
+        return "—"
+    if key == "minutes_pct":
+        return html.escape(fmt_pct_fn(value))
+    if key == "minutes":
+        return html.escape(f"{int(round(float(value))):,}")
+    if key == "shirt_number":
+        return html.escape(str(int(value)))
+    if key == "age":
+        return html.escape(str(int(value)))
+    return html.escape(str(value))
+
+
+def _general_profile_row_html(label: str, value: str) -> str:
+    return (
+        '<div class="pa-part-row">'
+        f'<span class="pa-part-label">{html.escape(label)}</span>'
+        f'<span class="pa-part-val"><span class="pa-part-val-num">{value}</span></span>'
+        "</div>"
+    )
+
+
+def _player_photo_html(player: dict) -> str:
+    photo_url = player.get("photo_url")
+    if photo_url:
+        return (
+            f'<img class="pa-identity-photo" src="{html.escape(str(photo_url), quote=True)}" '
+            f'alt="{html.escape(str(player.get("player_name", "Player")))}" loading="lazy" />'
+        )
+    initials = "".join(part[0] for part in str(player.get("player_name", "?")).split()[:2]).upper()
+    return f'<div class="pa-identity-photo-placeholder">{html.escape(initials or "?")}</div>'
+
+
 def _build_player_analysis_identity_card_html(
     player: dict,
-    participation_keys: tuple[str, ...],
     *,
-    participation_section_label: str = "Participation",
     label_fn,
     tooltip_fn,
     rank_in_group_fn,
@@ -2746,31 +2832,31 @@ def _build_player_analysis_identity_card_html(
     badges_block = (
         f'<div class="pa-identity-badges">{badges}</div>' if badges else ""
     )
-    metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
-    participation_lines = "".join(
-        _participation_row_html(
-            label_fn(key),
-            key,
-            _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
-            metric_ranks,
-            label_fn=label_fn,
-            tooltip_fn=tooltip_fn,
+    profile_lines = "".join(
+        _general_profile_row_html(
+            pp.GENERAL_PROFILE_LABELS[key],
+            _general_profile_value_html(player, key, fmt_pct_fn=fmt_pct_fn),
         )
-        for key in participation_keys
+        for key in pp.GENERAL_PROFILE_KEYS
     )
     return (
         '<div class="player-card pa-identity-card">'
         '<div class="pa-identity-top">'
+        '<div class="pa-identity-header">'
+        f'<div class="pa-identity-photo-wrap">{_player_photo_html(player)}</div>'
+        '<div class="pa-identity-head-text">'
         f'<h2 class="pa-identity-title">{html.escape(str(player.get("player_name", "—")))}</h2>'
         f'<p class="pa-identity-meta">{html.escape(str(player.get("team", "—")))} · '
         f'{html.escape(str(player.get("position", "—")))} · '
         f'{html.escape(group_label)}</p>'
-        '<span class="pa-identity-chip">Premier League</span>'
+        f'<span class="pa-identity-chip">{html.escape(APP_LEAGUE)}</span>'
         f"{badges_block}"
         "</div>"
+        "</div>"
+        "</div>"
         '<div class="pa-identity-divider"></div>'
-        f'<p class="pa-section-label">{html.escape(participation_section_label)}</p>'
-        f'<div class="pa-participation-compact">{participation_lines}</div>'
+        '<p class="pa-section-label">General profile</p>'
+        f'<div class="pa-participation-compact">{profile_lines}</div>'
         "</div>"
     )
 
@@ -2779,12 +2865,40 @@ def _build_player_analysis_pillars_html(
     player: dict,
     scout_section_specs,
     *,
+    pillar_focus: str = "pass",
+    participation_keys: tuple[str, ...] = (),
+    participation_section_label: str = "",
     label_fn,
     tooltip_fn,
     rank_in_group_fn,
     fmt_pct_fn,
     fmt_stat_fn,
 ) -> str:
+    metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
+    focus = str(pillar_focus or "pass").strip().lower()
+    pass_active = not focus.startswith("car")
+    carry_active = focus.startswith("car")
+
+    def _participation_block_html() -> str:
+        if not participation_keys:
+            return ""
+        participation_lines = "".join(
+            _participation_row_html(
+                label_fn(key),
+                key,
+                _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
+                metric_ranks,
+                label_fn=label_fn,
+                tooltip_fn=tooltip_fn,
+            )
+            for key in participation_keys
+        )
+        label = participation_section_label or "Volume"
+        return (
+            f'<p class="pa-section-label">{html.escape(label)}</p>'
+            f'<div class="pa-participation-compact pa-pillar-participation">{participation_lines}</div>'
+        )
+
     def _accordions_for(sections: tuple) -> str:
         return "".join(
             _section_grade_accordion_html(
@@ -2806,14 +2920,18 @@ def _build_player_analysis_pillars_html(
     carry_sections = tuple(s for s in scout_section_specs if str(s[0]).startswith("carry_"))
     groups = []
     if pass_sections:
+        pass_blur = "" if pass_active else " pa-pillar-blurred"
+        pass_body = _participation_block_html() if pass_active else ""
         groups.append(
-            '<p class="pa-pillar-group-label">Passing</p>'
-            f'<div class="pa-pillar-group">{_accordions_for(pass_sections)}</div>'
+            f'<p class="pa-pillar-group-label{pass_blur}">Passing</p>'
+            f'<div class="pa-pillar-group{pass_blur}">{pass_body}{_accordions_for(pass_sections)}</div>'
         )
     if carry_sections:
+        carry_blur = "" if carry_active else " pa-pillar-blurred"
+        carry_body = _participation_block_html() if carry_active else ""
         groups.append(
-            '<p class="pa-pillar-group-label">Carrying</p>'
-            f'<div class="pa-pillar-group">{_accordions_for(carry_sections)}</div>'
+            f'<p class="pa-pillar-group-label{carry_blur}">Carrying</p>'
+            f'<div class="pa-pillar-group{carry_blur}">{carry_body}{_accordions_for(carry_sections)}</div>'
         )
     return "".join(groups)
 
@@ -2823,8 +2941,9 @@ def _build_player_analysis_layout_html(
     *,
     scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
     pillar_labels: dict[str, str] | None = None,
-    participation_keys: tuple[str, ...] = PROGRESSION_PARTICIPATION_KEYS,
-    participation_section_label: str = "Participation (xStats)",
+    pillar_focus: str = "pass",
+    participation_keys: tuple[str, ...] = (),
+    participation_section_label: str = "",
     label_fn=pg_analyst_metric_label,
     tooltip_fn=pg_metric_tooltip,
     rank_in_group_fn=pg_rank_in_group_label,
@@ -2850,8 +2969,6 @@ def _build_player_analysis_layout_html(
     )
     identity_card = _build_player_analysis_identity_card_html(
         player,
-        participation_keys,
-        participation_section_label=participation_section_label,
         label_fn=label_fn,
         tooltip_fn=tooltip_fn,
         rank_in_group_fn=rank_in_group_fn,
@@ -2861,6 +2978,9 @@ def _build_player_analysis_layout_html(
     pillar_html = _build_player_analysis_pillars_html(
         player,
         scout_section_specs,
+        pillar_focus=pillar_focus,
+        participation_keys=participation_keys,
+        participation_section_label=participation_section_label,
         label_fn=label_fn,
         tooltip_fn=tooltip_fn,
         rank_in_group_fn=rank_in_group_fn,
@@ -3540,6 +3660,10 @@ def render_player_analysis_section(
     id_by_label = {o[3]: o[0] for o in options}
     label_by_id = {o[0]: o[3] for o in options}
 
+    current_label = st.session_state.get(PLAYER_ANALYSIS_SELECT_KEY)
+    if current_label and current_label not in labels:
+        st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
+
     _sync_player_analysis_selection(players_by_id, label_by_id)
 
     selected_label = st.selectbox(
@@ -3582,30 +3706,45 @@ def render_player_analysis_section(
         st.warning("Could not build a rating profile for this player.")
         return
 
+    player = pp.enrich_player_general_profile(player)
+
     st.markdown('<div class="pa-shell">', unsafe_allow_html=True)
 
-    st.markdown('<div class="pa-stats-filter"><div class="pa-stats-filter-inner">', unsafe_allow_html=True)
-    stats_mode = st.radio(
-        "Stats",
-        options=["xStats", "Traditional"],
-        horizontal=True,
-        key=PLAYER_ANALYSIS_STATS_MODE_KEY,
-        label_visibility="visible",
+    filter_cols = st.columns([0.92, 1.35, 0.78], gap="small")
+    with filter_cols[0]:
+        pillar_focus_label = st.radio(
+            "Focus",
+            options=["Passes", "Carries"],
+            horizontal=True,
+            key=PLAYER_ANALYSIS_PILLAR_FOCUS_KEY,
+            label_visibility="visible",
+        )
+    with filter_cols[1]:
+        use_traditional = False
+        if pillar_focus_label == "Passes":
+            stats_mode = st.radio(
+                "Pass stats",
+                options=["xStats", "Traditional"],
+                horizontal=True,
+                key=PLAYER_ANALYSIS_STATS_MODE_KEY,
+                label_visibility="visible",
+            )
+            use_traditional = stats_mode == "Traditional"
+    pillar_focus = "carry" if pillar_focus_label == "Carries" else "pass"
+    participation_keys = pp.participation_keys_for_focus(
+        pillar_focus=pillar_focus,
+        use_traditional=use_traditional,
     )
-    st.markdown("</div></div>", unsafe_allow_html=True)
-
-    use_traditional = stats_mode == "Traditional"
-    participation_keys = (
-        TRADITIONAL_PARTICIPATION_KEYS if use_traditional else PROGRESSION_PARTICIPATION_KEYS
-    )
-    participation_section_label = (
-        "Traditional stats" if use_traditional else "Participation (xStats)"
+    participation_section_label = pp.participation_section_label_for_focus(
+        pillar_focus=pillar_focus,
+        use_traditional=use_traditional,
     )
 
     render_player_analysis_profile(
         player,
         scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
         pillar_labels=_PROGRESSION_PILLAR_RADAR_LABELS,
+        pillar_focus=pillar_focus,
         participation_keys=participation_keys,
         participation_section_label=participation_section_label,
         label_fn=pg_analyst_metric_label,

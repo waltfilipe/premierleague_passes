@@ -5,4 +5,5 @@ __pycache__/
 venv/
 .env
 data/sofascore/
+data/player_profiles_cache.json
 passbr*/
