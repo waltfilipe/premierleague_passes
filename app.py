@@ -1708,19 +1708,6 @@ st.markdown(
         display: flex;
         flex-direction: column;
         gap: 0.38rem;
-        transition: filter 0.2s ease, opacity 0.2s ease;
-    }
-    .pa-pillar-group.pa-pillar-blurred,
-    .pa-pillar-group-label.pa-pillar-blurred {
-        filter: blur(5px);
-        opacity: 0.42;
-        pointer-events: none;
-        user-select: none;
-    }
-    .pa-pillar-participation {
-        margin-bottom: 0.2rem;
-        padding-bottom: 0.15rem;
-        border-bottom: 1px solid #243049;
     }
     .pa-pillars-stack .grade-accordion {
         margin-bottom: 0;
@@ -3007,8 +2994,8 @@ def _build_player_analysis_pillars_html(
     fmt_stat_fn,
 ) -> str:
     focus = str(view_mode or "general").strip().lower()
-    blur_pass = focus == "carry"
-    blur_carry = focus == "pass"
+    show_pass = focus in {"general", "pass"}
+    show_carry = focus in {"general", "carry"}
 
     def _accordions_for(sections: tuple) -> str:
         return "".join(
@@ -3030,17 +3017,15 @@ def _build_player_analysis_pillars_html(
     pass_sections = tuple(s for s in scout_section_specs if str(s[0]).startswith("pass_"))
     carry_sections = tuple(s for s in scout_section_specs if str(s[0]).startswith("carry_"))
     groups = []
-    if pass_sections:
-        pass_blur = " pa-pillar-blurred" if blur_pass else ""
+    if pass_sections and show_pass:
         groups.append(
-            f'<p class="pa-pillar-group-label{pass_blur}">Passing</p>'
-            f'<div class="pa-pillar-group{pass_blur}">{_accordions_for(pass_sections)}</div>'
+            '<p class="pa-pillar-group-label">Passing</p>'
+            f'<div class="pa-pillar-group">{_accordions_for(pass_sections)}</div>'
         )
-    if carry_sections:
-        carry_blur = " pa-pillar-blurred" if blur_carry else ""
+    if carry_sections and show_carry:
         groups.append(
-            f'<p class="pa-pillar-group-label{carry_blur}">Carrying</p>'
-            f'<div class="pa-pillar-group{carry_blur}">{_accordions_for(carry_sections)}</div>'
+            '<p class="pa-pillar-group-label">Carrying</p>'
+            f'<div class="pa-pillar-group">{_accordions_for(carry_sections)}</div>'
         )
     return "".join(groups)
 
