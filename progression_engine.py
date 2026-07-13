@@ -111,6 +111,23 @@ TRADITIONAL_PARTICIPATION_KEYS: tuple[str, ...] = (
     "crosses_total",
 )
 
+TRADITIONAL_PASS_VOLUME_KEYS: tuple[str, ...] = (
+    "passes_total",
+    "long_balls",
+    "progressive_passes",
+    "final_third_passes",
+    "passes_to_box",
+    "key_passes",
+    "crosses_total",
+)
+
+TRADITIONAL_CARRY_VOLUME_KEYS: tuple[str, ...] = (
+    "carry_progressive_carries",
+    "very_progressive_carries",
+    "dribbles_success",
+    "dribbles_final_third",
+)
+
 PARTICIPATION_RANK_KEYS: tuple[str, ...] = tuple(
     dict.fromkeys((*PROGRESSION_PARTICIPATION_KEYS, *TRADITIONAL_PARTICIPATION_KEYS))
 )
@@ -123,15 +140,19 @@ METRIC_LABELS: dict[str, str] = {
     "dribble_success_pct": "Dribble success rate",
     "carry_impact_passes": "Threat carries (total)",
     "carry_high_impact_passes": "High-threat carries (total)",
-    "passes_total": "Total passes",
+    "passes_total": "Passes p90",
     "pass_completion_pct": "Pass completion %",
     "long_ball_completion_pct": "Long ball completion %",
-    "passes_to_box": "Passes into box",
-    "carry_progressive_carries": "Progressive carries",
-    "very_progressive_carries": "Very progressive carries",
-    "dribbles_success": "Successful dribbles",
-    "dribbles_final_third": "Successful dribbles (final third)",
-    "crosses_total": "Crosses",
+    "long_balls": "Long balls p90",
+    "progressive_passes": "Progressive passes p90",
+    "final_third_passes": "Final third passes p90",
+    "passes_to_box": "Passes into box p90",
+    "key_passes": "Key passes p90",
+    "crosses_total": "Crosses p90",
+    "carry_progressive_carries": "Progressive carries p90",
+    "very_progressive_carries": "Very progressive carries p90",
+    "dribbles_success": "Successful dribbles p90",
+    "dribbles_final_third": "Dribbles in final third p90",
 }
 
 METRIC_TOOLTIPS: dict[str, str] = {
@@ -142,15 +163,22 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "dribble_success_pct": ce.METRIC_TOOLTIPS.get("dribble_success_pct", ""),
     "carry_impact_passes": ce.METRIC_TOOLTIPS.get("impact_passes", ""),
     "carry_high_impact_passes": ce.METRIC_TOOLTIPS.get("high_impact_passes", ""),
-    "passes_total": "All pass attempts in the sample.",
+    "passes_total": "Completed and incomplete pass attempts per 90 minutes.",
     "pass_completion_pct": "Share of pass attempts completed successfully.",
+    "long_balls": "Long-ball attempts (≥30 m) per 90 minutes.",
     "long_ball_completion_pct": "Share of long balls (≥30 m) completed successfully.",
-    "passes_to_box": "Completed passes ending inside the penalty area.",
-    "carry_progressive_carries": "Carries that advance the ball meaningfully toward goal.",
-    "very_progressive_carries": "Progressive carries also classified as high-threat.",
-    "dribbles_success": "Total completed dribbles.",
-    "dribbles_final_third": "Completed dribbles starting in the final third.",
-    "crosses_total": "Cross attempts (all outcomes).",
+    "progressive_passes": "Successful progressive passes per 90 minutes.",
+    "final_third_passes": "Successful passes ending in the final third per 90 minutes.",
+    "passes_to_box": "Successful passes into the penalty area per 90 minutes.",
+    "key_passes": "Key passes per 90 minutes.",
+    "crosses_total": "Cross attempts per 90 minutes.",
+    "carry_progressive_carries": "Progressive carries per 90 minutes.",
+    "very_progressive_carries": (
+        "Very progressive carries per 90 minutes "
+        "(Wyscout distance rule at +50% vs progressive carries)."
+    ),
+    "dribbles_success": "Successful dribbles per 90 minutes.",
+    "dribbles_final_third": "Successful dribbles starting in the final third per 90 minutes.",
 }
 
 
@@ -171,6 +199,10 @@ def fmt_pct(value: float | None) -> str:
 
 
 def fmt_stat_value(key: str, value) -> str:
+    if key in TRADITIONAL_PASS_VOLUME_KEYS or key in TRADITIONAL_CARRY_VOLUME_KEYS:
+        if value is None:
+            return "—"
+        return pe.fmt_smart(value)
     if key in {
         "dribbles_success",
         "dribbles_final_third",
@@ -185,6 +217,8 @@ def fmt_stat_value(key: str, value) -> str:
 
 
 def _progression_shrinkage_sample_for_metric(key: str, player: dict) -> float:
+    if key in TRADITIONAL_PASS_VOLUME_KEYS or key in TRADITIONAL_CARRY_VOLUME_KEYS:
+        return float(player.get("minutes") or 0)
     if key.startswith("carry_"):
         carry_key = key.removeprefix("carry_")
         if carry_key.endswith("_p90") or carry_key in {"construction_aip", "aggression_aip"}:
@@ -556,6 +590,24 @@ def _apply_progression_dashboard_ratings(
     ]
 
 
+def _traditional_volume_p90(total, minutes: float | None) -> float:
+    mins = float(minutes or 0)
+    if mins <= 0:
+        return 0.0
+    return round(float(total or 0) * 90.0 / mins, 3)
+
+
+def _apply_traditional_volume_p90(out: dict) -> dict:
+    minutes = float(out.get("minutes") or 0)
+    for key in TRADITIONAL_PASS_VOLUME_KEYS:
+        if out.get(key) is not None:
+            out[key] = _traditional_volume_p90(out[key], minutes)
+    for key in TRADITIONAL_CARRY_VOLUME_KEYS:
+        if out.get(key) is not None:
+            out[key] = _traditional_volume_p90(out[key], minutes)
+    return out
+
+
 def enrich_traditional_participation_fields(
     player: dict,
     *,
@@ -607,7 +659,7 @@ def enrich_traditional_participation_fields(
         out["long_ball_completion_pct"] = (
             round(long_completed / long_balls * 100.0, 1) if long_balls else 0.0
         )
-    return out
+    return _apply_traditional_volume_p90(out)
 
 
 def _participation_rank_for_player(

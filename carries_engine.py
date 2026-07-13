@@ -34,7 +34,7 @@ except ImportError:
 SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles.csv"
 SEASON_SERIEA_CARRY_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles_seriea.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 3
+DATA_CACHE_VERSION = 4
 
 CARRY_CATEGORIES = frozenset({"ball-carries", "dribbles"})
 
@@ -75,6 +75,7 @@ DEFAULT_PLAYER_POSITION = "CM"
 WYSCOUT_PROG_OWN_HALF = 30.0
 WYSCOUT_PROG_CROSS_HALF = 15.0
 WYSCOUT_PROG_OPP_HALF = 10.0
+VERY_PROGRESSIVE_PROGRESS_SCALE = 1.5
 IMPACT_PASS_MIN_GOAL_APPROACH_FINAL_THIRD = 5.0
 IMPACT_PASS_MIN_GOAL_APPROACH_REST = 10.0
 
@@ -582,20 +583,26 @@ def _approaches_goal_vec(
 
 
 def _progressive_wyscout_vec(
-    x_start: np.ndarray, y_start: np.ndarray, x_end: np.ndarray, y_end: np.ndarray
+    x_start: np.ndarray,
+    y_start: np.ndarray,
+    x_end: np.ndarray,
+    y_end: np.ndarray,
+    *,
+    threshold_scale: float = 1.0,
 ) -> np.ndarray:
     progress = _goal_dist_vec(x_start, y_start) - _goal_dist_vec(x_end, y_end)
     ok = progress > 0
     out = np.zeros(len(progress), dtype=bool)
     if not ok.any():
         return out
+    scale = float(threshold_scale)
     start_own = x_start < HALF_LINE_X
     end_own = x_end < HALF_LINE_X
     start_opp = x_start >= HALF_LINE_X
     end_opp = x_end >= HALF_LINE_X
-    thresh = np.full(len(progress), WYSCOUT_PROG_CROSS_HALF)
-    thresh[start_own & end_own] = WYSCOUT_PROG_OWN_HALF
-    thresh[start_opp & end_opp] = WYSCOUT_PROG_OPP_HALF
+    thresh = np.full(len(progress), WYSCOUT_PROG_CROSS_HALF * scale)
+    thresh[start_own & end_own] = WYSCOUT_PROG_OWN_HALF * scale
+    thresh[start_opp & end_opp] = WYSCOUT_PROG_OPP_HALF * scale
     out[ok] = progress[ok] >= thresh[ok]
     return out
 
@@ -855,6 +862,11 @@ def _enrich_passes(
         out["x_start"].to_numpy(), out["y_start"].to_numpy(),
         out["x_end"].to_numpy(), out["y_end"].to_numpy(),
     )
+    out["is_very_progressive_wyscout"] = _progressive_wyscout_vec(
+        out["x_start"].to_numpy(), out["y_start"].to_numpy(),
+        out["x_end"].to_numpy(), out["y_end"].to_numpy(),
+        threshold_scale=VERY_PROGRESSIVE_PROGRESS_SCALE,
+    )
     out["impact_attempt"] = out["has_end"] & out["approaches_goal"] & (out["impact_tier"] >= 1)
     out["high_impact_attempt"] = out["has_end"] & out["approaches_goal"] & (out["impact_tier"] >= 2)
     out["impact_success"] = out["is_won"] & out["impact_attempt"]
@@ -970,7 +982,9 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
     positive_dxt_pct = float((xt["delta_xt_v4"] > 0).mean() * 100.0) if len(xt) else 0.0
 
     progressive_passes = int(passes["prog_success"].sum())
-    very_progressive_carries = int((passes["prog_success"] & passes["high_impact_success"]).sum())
+    very_progressive_carries = int(
+        (passes["is_success"] & passes["is_very_progressive_wyscout"]).sum()
+    )
     box_mask = _ended_in_penalty_box(passes)
     carries_to_box = int(box_mask.sum())
     carries_impact_to_box = int((box_mask & passes["impact_success"]).sum())
