@@ -1275,7 +1275,40 @@ st.markdown(
     }
     section[data-testid="stSidebar"] { display: none; }
     .pa-shell { max-width: 1380px; margin: 0 auto 1.25rem auto; }
-    .pa-toggles { margin: 0.15rem 0 0.75rem 0; }
+    .pa-stats-filter {
+        display: grid;
+        grid-template-columns: minmax(220px, 0.92fr) minmax(320px, 1.35fr) minmax(210px, 0.78fr);
+        gap: 0.75rem;
+        margin: 0.35rem 0 0.55rem 0;
+    }
+    .pa-stats-filter-inner {
+        min-width: 0;
+    }
+    .pa-stats-filter-inner [data-testid="stRadio"] > label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #8fa3bf;
+    }
+    @media (max-width: 1100px) {
+        .pa-stats-filter { grid-template-columns: 1fr; }
+    }
+    .pa-panels-row {
+        margin-top: 0.85rem;
+    }
+    .pa-panels-row [data-testid="stExpander"] {
+        background: linear-gradient(160deg, #151b2b 0%, #101522 100%);
+        border: 1px solid #2a3550;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .pa-panels-row [data-testid="stExpander"] summary {
+        color: #93c5fd;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+    }
     .pa-layout {
         display: grid;
         grid-template-columns: minmax(220px, 0.92fr) minmax(320px, 1.35fr) minmax(210px, 0.78fr);
@@ -2613,10 +2646,8 @@ def _participation_row_html(
     value: str,
     metric_ranks: dict,
     *,
-    player: dict,
     label_fn,
     tooltip_fn,
-    rank_in_group_fn=rank_in_group_label,
 ) -> str:
     label_html = (
         _metric_label_html(key, label_fn=label_fn, tooltip_fn=tooltip_fn)
@@ -2635,14 +2666,10 @@ def _participation_row_html(
             f'<span class="rank-tipbox">{rank}/{total}</span>'
             f"</span>"
         )
-    rank_sub = _metric_rank_subtitle_html(
-        player, key, metric_ranks, rank_in_group_fn=rank_in_group_fn,
-    )
     value_inner = (
         f'<span class="val-wrap">{badge}<span class="pa-part-val-num">{html.escape(value)}</span></span>'
-        f"{rank_sub}"
         if badge
-        else f'<span class="pa-part-val-num">{html.escape(value)}</span>{rank_sub}'
+        else f'<span class="pa-part-val-num">{html.escape(value)}</span>'
     )
     return (
         '<div class="pa-part-row">'
@@ -2676,10 +2703,8 @@ def _build_player_analysis_identity_card_html(
             key,
             _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
             metric_ranks,
-            player=player,
             label_fn=label_fn,
             tooltip_fn=tooltip_fn,
-            rank_in_group_fn=rank_in_group_fn,
         )
         for key in participation_keys
     )
@@ -3420,10 +3445,6 @@ def render_player_analysis_section(
     carry_pool_by_position: dict[str, list[dict]],
 ) -> None:
     st.subheader("Player Analysis")
-    st.caption(
-        "Select a Premier League player for a focused rating breakdown. "
-        "Optionally reveal progression maps or Serie A comparables — loaded only when requested."
-    )
 
     if not all_players:
         st.info("No players available.")
@@ -3457,6 +3478,9 @@ def render_player_analysis_section(
     if prev_id != player_id:
         st.session_state["pa_last_player_id"] = player_id
         st.session_state.pop(PLAYER_ANALYSIS_SIMILAR_PICK_KEY, None)
+        st.session_state.pop(PLAYER_ANALYSIS_SHOW_MAPS_KEY, None)
+        if st.query_params.get("similar_idx") is None and st.query_params.get("pa_similar") != "1":
+            st.session_state.pop(PLAYER_ANALYSIS_SHOW_SIMILAR_KEY, None)
         url_pick = st.query_params.get("player_id")
         if url_pick and str(url_pick) != str(player_id):
             try:
@@ -3480,23 +3504,15 @@ def render_player_analysis_section(
 
     st.markdown('<div class="pa-shell">', unsafe_allow_html=True)
 
-    st.markdown('<div class="pa-toggles">', unsafe_allow_html=True)
-    if st.query_params.get("similar_idx") is not None or st.query_params.get("pa_similar") == "1":
-        st.session_state[PLAYER_ANALYSIS_SHOW_SIMILAR_KEY] = True
-    toggle_maps, toggle_similar, toggle_stats, _ = st.columns([1.1, 1.35, 1.35, 2.2], gap="small")
-    with toggle_maps:
-        show_maps = st.toggle("Show progression maps", key=PLAYER_ANALYSIS_SHOW_MAPS_KEY)
-    with toggle_similar:
-        show_similar = st.toggle("Show Serie A comparables", key=PLAYER_ANALYSIS_SHOW_SIMILAR_KEY)
-    with toggle_stats:
-        stats_mode = st.radio(
-            "Stats",
-            options=["xStats", "Traditional"],
-            horizontal=True,
-            key=PLAYER_ANALYSIS_STATS_MODE_KEY,
-            label_visibility="visible",
-        )
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('<div class="pa-stats-filter"><div class="pa-stats-filter-inner">', unsafe_allow_html=True)
+    stats_mode = st.radio(
+        "Stats",
+        options=["xStats", "Traditional"],
+        horizontal=True,
+        key=PLAYER_ANALYSIS_STATS_MODE_KEY,
+        label_visibility="visible",
+    )
+    st.markdown("</div></div>", unsafe_allow_html=True)
 
     use_traditional = stats_mode == "Traditional"
     participation_keys = (
@@ -3523,30 +3539,31 @@ def render_player_analysis_section(
         rating_slot_fn=_progression_rating_slot_html,
     )
 
-    if show_maps:
-        st.markdown(
-            '<div class="pa-panel"><div class="pa-panel-title">Progression maps</div></div>',
-            unsafe_allow_html=True,
-        )
-        render_progression_maps_only(
-            player,
-            passes_by_player.get(player_id),
-            carries_by_player.get(player_id),
-        )
+    if st.query_params.get("similar_idx") is not None or st.query_params.get("pa_similar") == "1":
+        st.session_state[PLAYER_ANALYSIS_SHOW_SIMILAR_KEY] = True
 
-    if show_similar:
-        st.markdown(
-            '<div class="pa-similar-wrap"><div class="pa-panel-title">Serie A comparables</div></div>',
-            unsafe_allow_html=True,
-        )
-        _render_player_analysis_similarity(
-            player_id,
-            passes_by_player=passes_by_player,
-            carries_by_player=carries_by_player,
-            carries_players_sb=carries_players,
-            all_players=all_players,
-            pick_key=PLAYER_ANALYSIS_SIMILAR_PICK_KEY,
-        )
+    similar_expanded = bool(st.session_state.get(PLAYER_ANALYSIS_SHOW_SIMILAR_KEY, False))
+
+    st.markdown('<div class="pa-panels-row">', unsafe_allow_html=True)
+    maps_col, similar_col = st.columns(2, gap="medium")
+    with maps_col:
+        with st.expander("Progression maps"):
+            render_progression_maps_only(
+                player,
+                passes_by_player.get(player_id),
+                carries_by_player.get(player_id),
+            )
+    with similar_col:
+        with st.expander("Serie A comparables", expanded=similar_expanded):
+            _render_player_analysis_similarity(
+                player_id,
+                passes_by_player=passes_by_player,
+                carries_by_player=carries_by_player,
+                carries_players_sb=carries_players,
+                all_players=all_players,
+                pick_key=PLAYER_ANALYSIS_SIMILAR_PICK_KEY,
+            )
+    st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
