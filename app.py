@@ -88,8 +88,7 @@ DATA_CACHE_VERSION = pe.DATA_CACHE_VERSION
 LONG_BALL_STAT_KEYS = pe.LONG_BALL_STAT_KEYS
 ABSOLUTE_METRIC_KEYS = pe.ABSOLUTE_METRIC_KEYS
 RELATIVE_METRIC_KEYS = pe.RELATIVE_METRIC_KEYS
-CONSTRUCTION_METRIC_KEYS = pe.CONSTRUCTION_METRIC_KEYS
-AGGRESSION_METRIC_KEYS = pe.AGGRESSION_METRIC_KEYS
+PASS_TYPES_METRIC_KEYS = pe.PASS_TYPES_METRIC_KEYS
 SCOUT_SECTION_SPECS = pe.SCOUT_SECTION_SPECS
 POSITION_GROUPS_ORDER = pe.POSITION_GROUPS_ORDER
 RATING_TOP_N = pe.RATING_TOP_N
@@ -320,8 +319,7 @@ _PILLAR_RADAR_LABELS: dict[str, str] = {
     "metrics_absolute": "P90",
     "metrics_relative": "Eff",
     "long_balls": "Vrt",
-    "construction": "Cst",
-    "aggression": "Atq",
+    "pass_types": "Typ",
 }
 _CARRIES_PILLAR_RADAR_LABELS: dict[str, str] = {
     "metrics_absolute": "Vol",
@@ -331,8 +329,7 @@ _CARRIES_PILLAR_RADAR_LABELS: dict[str, str] = {
 _PROGRESSION_PILLAR_RADAR_LABELS: dict[str, str] = {
     "pass_metrics_absolute": "P-P90",
     "pass_metrics_relative": "P-Eff",
-    "pass_construction": "P-Cst",
-    "pass_aggression": "P-Atq",
+    "pass_pass_types": "P-Typ",
     "carry_metrics_absolute": "C-Vol",
     "carry_metrics_relative": "C-Eff",
     "carry_general_carries_dribbles": "C-FT",
@@ -2474,18 +2471,10 @@ def _metric_line_html(
             rank = int(info["rank"])
             total = int(info["total"])
             badge = _rank_bar_html(rank, total)
-    rank_sub = (
-        _metric_rank_subtitle_html(
-            player or {}, key, metric_ranks, rank_in_group_fn=rank_in_group_fn,
-        )
-        if show_rank and player
-        else ""
-    )
     value_inner = (
         f'<span class="val-wrap">{badge}<span class="stat-val">{html.escape(value)}</span></span>'
-        f"{rank_sub}"
         if badge
-        else f'<span class="stat-val">{html.escape(value)}</span>{rank_sub}'
+        else f'<span class="stat-val">{html.escape(value)}</span>'
     )
     label_html = _metric_label_html(key, label_fn=label_fn, tooltip_fn=tooltip_fn) if key else html.escape(label)
     return (
@@ -2497,30 +2486,10 @@ def _metric_line_html(
 
 
 def _section_header_html(title: str, section_key: str, player: dict) -> str:
-    section_ratings = player.get("section_ratings") if isinstance(player.get("section_ratings"), dict) else {}
-    section_rank_info = player.get("section_rating_ranks") if isinstance(player.get("section_rating_ranks"), dict) else {}
-    score = section_ratings.get(section_key)
-    pill = ""
-    if score is not None:
-        txt = fmt_rating_score(score)
-        rank_info = section_rank_info.get(section_key)
-        if rank_info:
-            color = rank_color(int(rank_info["rank"]), int(rank_info["total"]))
-            txt_color = _badge_text_color(color)
-            rank_txt = f'{int(rank_info["rank"])}/{int(rank_info["total"])}'
-            pill = (
-                f'<span class="section-rating-tip">'
-                f'<span class="section-rating-pill" style="background:{color};color:{txt_color}">'
-                f"{html.escape(txt)}</span>"
-                f'<span class="rating-tipbox">{rank_txt}</span>'
-                f"</span>"
-            )
-        else:
-            pill = f'<span class="section-rating-pill">{html.escape(txt)}</span>'
+    _ = (section_key, player)
     return (
         '<div class="stat-section-row">'
         f'<span class="stat-section">{html.escape(title)}</span>'
-        f"{pill}"
         "</div>"
     )
 
@@ -2703,24 +2672,11 @@ def _section_grade_summary_bits(
     *,
     rank_in_group_fn=rank_in_group_label,
 ) -> str:
-    section_ratings = player.get("section_ratings") if isinstance(player.get("section_ratings"), dict) else {}
-    section_rank_info = player.get("section_rating_ranks") if isinstance(player.get("section_rating_ranks"), dict) else {}
-    score = section_ratings.get(section_key)
-    score_html = _section_rating_pill_html(score)
-    rank_html = ""
-    if score is not None:
-        rank_info = section_rank_info.get(section_key)
-        if rank_info:
-            rank_html = (
-                f'<div class="grade-card-rank">'
-                f'{html.escape(rank_in_group_fn(int(rank_info["rank"]), player.get("position_group")))}'
-                f"</div>"
-            )
+    _ = (player, section_key, rank_in_group_fn)
     return (
         f'<div class="grade-summary-main">'
         f'<div class="grade-summary-top">'
-        f'<div><div class="grade-card-title">{html.escape(title)}</div>{rank_html}</div>'
-        f'<div class="grade-card-score">{score_html}</div>'
+        f'<div class="grade-card-title">{html.escape(title)}</div>'
         f"</div>"
         f"</div>"
     )
