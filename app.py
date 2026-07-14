@@ -1661,6 +1661,14 @@ st.markdown(
     }
     .pa-rating-block-score .rating-box {
         min-width: 3.35rem;
+        padding: 0.4rem 0.55rem;
+        font-size: 1rem;
+    }
+    .pa-rating-panel .pa-rating-block-score .rating-box {
+        min-width: 2.7rem;
+        padding: 0.32rem 0.45rem;
+        font-size: 0.92rem;
+    }
         font-size: 1.35rem !important;
         font-weight: 800 !important;
         padding: 0.38rem 0.7rem !important;
