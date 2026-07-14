@@ -34,7 +34,7 @@ except ImportError:
 SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles.csv"
 SEASON_SERIEA_CARRY_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles_seriea.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 4
+DATA_CACHE_VERSION = 5
 
 CARRY_CATEGORIES = frozenset({"ball-carries", "dribbles"})
 
@@ -140,6 +140,7 @@ XT_V4_BOX_X_START = 90.0
 PENALTY_BOX_X_MIN = 102.0
 PENALTY_BOX_Y_MIN = 18.0
 PENALTY_BOX_Y_MAX = 62.0
+POSITIVE_DXT_THRESHOLD = 0.15
 
 RANKING_METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Volume & impact rate (p90)", (
@@ -195,11 +196,12 @@ METRIC_LABELS: dict[str, str] = {
     "phi_p90": "High-Threat Carries",
     "dxt_p90": "Carry Threat",
     "dxt_per_pass": "Average Carry Threat",
+    "threat_carry_pct": "% Threat Carries",
     "dxt_gt_015_pct": "% High-Threat Carries",
     "positive_dxt_pct": "% Carries with Positive ΔxT",
     "carries_to_box_p90": "Box Entries",
     "carries_impact_to_box_p90": "Threat Box Entries",
-    "dribbles_final_third_p90": "Successful Dribbles",
+    "dribbles_final_third_p90": "Dribbles in Final Third",
     "carries_total": "Total carries",
     "dribbles_total": "Dribbles attempted",
     "dribble_success_pct": "Dribble success rate",
@@ -210,8 +212,10 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "impact_per_pass": "Share of carries classified as productive.",
     "phi_p90": "Maximum-impact carries — those that open the game most.",
     "dxt_p90": "How much the player improves the team's attacking position per game through carries.",
-    "dxt_per_pass": "Average field gain on each completed carry.",
+    "dxt_per_pass": "Average ΔxT generated per completed carry.",
+    "threat_carry_pct": "Share of all carries classified as threat carries.",
     "dxt_gt_015_pct": "Share of carries with clear progress toward goal.",
+    "positive_dxt_pct": "Share of carries with ΔxT above +0.15.",
     "carries_to_box_p90": "Carries ending inside the penalty area, per game.",
     "carries_impact_to_box_p90": "Penalty-box entries classified as threat carries, per game.",
     "dribbles_final_third_p90": "Successful 1v1s in the final third, per game.",
@@ -230,18 +234,19 @@ TOOLTIP_EXTRA_KEYS: tuple[str, ...] = ("minutes", "passes_completed")
 
 ABSOLUTE_METRIC_KEYS: tuple[str, ...] = (
     "impact_passes_p90",
-    "phi_p90",
-    "dxt_p90",
+    "dxt_per_pass",
 )
 
-RELATIVE_METRIC_KEYS: tuple[str, ...] = (
-    "dxt_per_pass",
-    "dxt_gt_015_pct",
+RISK_CARRY_METRIC_KEYS: tuple[str, ...] = (
+    "threat_carry_pct",
     "positive_dxt_pct",
 )
 
+RELATIVE_METRIC_KEYS: tuple[str, ...] = (
+    "dxt_gt_015_pct",
+)
+
 GENERAL_CARRIES_DRIBBLES_METRIC_KEYS: tuple[str, ...] = (
-    "carries_to_box_p90",
     "carries_impact_to_box_p90",
     "dribbles_final_third_p90",
 )
@@ -252,34 +257,39 @@ SCOUT_SECTION_SPECS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
     (
         "metrics_absolute",
         "Carrying Threat (Per Game)",
-        "Per-90 volume: threat carries, high-threat carries, and carry threat.",
+        "Threat carries per 90 and average carry threat.",
         ABSOLUTE_METRIC_KEYS,
     ),
     (
-        "metrics_relative",
-        "Carry Effectiveness",
-        "Per-carry quality: average threat and share of high-threat carries.",
-        RELATIVE_METRIC_KEYS,
+        "risk_carry",
+        "Risk Carries",
+        "Share of threat carries and carries with positive ΔxT.",
+        RISK_CARRY_METRIC_KEYS,
     ),
     (
         "general_carries_dribbles",
         "Final Third Threat (Per Game)",
-        "Box entries, threat box entries, and successful final-third dribbles.",
+        "Threat box entries and dribbles in the final third.",
         GENERAL_CARRIES_DRIBBLES_METRIC_KEYS,
     ),
 )
 
 SECTION_RATING_GROUPS: dict[str, tuple[str, ...]] = {
     "metrics_absolute": ABSOLUTE_METRIC_KEYS,
-    "metrics_relative": RELATIVE_METRIC_KEYS,
+    "risk_carry": RISK_CARRY_METRIC_KEYS,
     "general_carries_dribbles": GENERAL_CARRIES_DRIBBLES_METRIC_KEYS,
 }
 
-RANK_DISPLAY_KEYS: tuple[str, ...] = (
-    *TOOLTIP_EXTRA_KEYS,
-    "minutes_pct",
-    *RATING_METRIC_KEYS,
-    *GENERAL_CARRIES_DRIBBLES_METRIC_KEYS,
+RANK_DISPLAY_KEYS: tuple[str, ...] = tuple(
+    dict.fromkeys(
+        (
+            *TOOLTIP_EXTRA_KEYS,
+            "minutes_pct",
+            *RATING_METRIC_KEYS,
+            *RISK_CARRY_METRIC_KEYS,
+            *GENERAL_CARRIES_DRIBBLES_METRIC_KEYS,
+        )
+    )
 )
 
 TOOLTIP_LABELS: dict[str, str] = {
@@ -979,7 +989,10 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
     dxt_gt_015_pct = float(
         (xt["delta_xt_v4"] > DXT_GT_PCT_THRESHOLD).mean() * 100.0
     ) if len(xt) else 0.0
-    positive_dxt_pct = float((xt["delta_xt_v4"] > 0).mean() * 100.0) if len(xt) else 0.0
+    positive_dxt_pct = float(
+        (xt["delta_xt_v4"] > POSITIVE_DXT_THRESHOLD).mean() * 100.0
+    ) if len(xt) else 0.0
+    threat_carry_pct = round(impact["successful"] / total * 100.0, 1) if total else 0.0
 
     progressive_passes = int(passes["prog_success"].sum())
     very_progressive_carries = int(
@@ -1008,6 +1021,7 @@ def _pass_layer_metrics(passes: pd.DataFrame) -> dict:
         "sum_xt_end_passes": float(completed["xt_end_v4"].sum()) if not completed.empty else 0.0,
         "dxt_gt_015_pct": round(dxt_gt_015_pct, 1),
         "positive_dxt_pct": round(positive_dxt_pct, 1),
+        "threat_carry_pct": threat_carry_pct,
         "impact_per_pass": _safe_ratio(impact["successful"], total),
         "dxt_per_pass": _safe_ratio(float(passes["delta_xt_v4"].sum()), int(len(completed))),
         "carries_to_box": carries_to_box,

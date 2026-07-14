@@ -312,30 +312,52 @@ def _rating_badges_html(player: dict) -> str:
         return ""
     return f'<span class="rating-badge-row">{"".join(badges)}</span>'
 
-_PILLAR_RADAR_LABELS: dict[str, str] = {
-    "metrics_absolute": "Threat",
-    "risk_pass": "Risk",
-    "distance": "Dist",
-    "pass_types": "Typ",
+_PROGRESSION_RADAR_METRIC_LABELS: dict[str, str] = {
+    "impact_passes_p90": "Thr P90",
+    "impact_per_pass": "Avg Thr",
+    "risk_passes_p90": "Risk P90",
+    "risk_pass_pct": "Risk %",
+    "positive_dxt_pct": "P +ΔxT",
+    "construction_aip_p90": "Build",
+    "aggression_aip_p90": "Attack",
+    "carry_impact_passes_p90": "C Thr",
+    "carry_dxt_per_pass": "C Avg",
+    "carry_threat_carry_pct": "C Thr %",
+    "carry_positive_dxt_pct": "C +ΔxT",
+    "carry_carries_impact_to_box_p90": "Box Thr",
+    "carry_dribbles_final_third_p90": "FT Drib",
 }
-_CARRIES_PILLAR_RADAR_LABELS: dict[str, str] = {
-    "metrics_absolute": "Vol",
-    "metrics_relative": "Eff",
-    "general_carries_dribbles": "FT",
+_PASS_RADAR_METRIC_LABELS: dict[str, str] = {
+    key: label
+    for key, label in _PROGRESSION_RADAR_METRIC_LABELS.items()
+    if not key.startswith("carry_")
 }
-_PROGRESSION_PILLAR_RADAR_LABELS: dict[str, str] = {
-    "pass_metrics_absolute": "P-Thr",
-    "pass_risk_pass": "P-Risk",
-    "pass_distance": "P-Dist",
-    "pass_pass_types": "P-Typ",
-    "carry_metrics_absolute": "C-Vol",
-    "carry_metrics_relative": "C-Eff",
-    "carry_general_carries_dribbles": "C-FT",
+_CARRY_RADAR_METRIC_LABELS: dict[str, str] = {
+    key.removeprefix("carry_"): label
+    for key, label in _PROGRESSION_RADAR_METRIC_LABELS.items()
+    if key.startswith("carry_")
 }
 PA_RADAR_EXCLUDED_SECTIONS: frozenset[str] = frozenset()
 PA_RADAR_PASS_COLOR = "#60a5fa"
 PA_RADAR_CARRY_COLOR = "#34d399"
 PA_RADAR_FILL_NEUTRAL = "#c4b5fd"
+
+
+def _radar_axis_is_carry(metric_key: str, scout_section_specs) -> bool:
+    if str(metric_key).startswith("carry_"):
+        return True
+    return not any(str(section_key).startswith("pass_") for section_key, _, _, _ in scout_section_specs)
+
+
+def _radar_metric_keys_from_specs(
+    scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
+) -> tuple[str, ...]:
+    keys: list[str] = []
+    for section_key, _, _, section_keys in scout_section_specs:
+        if "distance" in str(section_key):
+            continue
+        keys.extend(section_keys)
+    return tuple(keys)
 
 
 def _progression_radar_section_specs(
@@ -347,10 +369,17 @@ def _progression_radar_section_specs(
     )
 
 
+def _progression_radar_metric_keys(
+    scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
+) -> tuple[str, ...]:
+    return _radar_metric_keys_from_specs(scout_section_specs)
+
+
 def _pillar_radar_b64(
     player: dict,
     *,
     scout_section_specs=SCOUT_SECTION_SPECS,
+    metric_keys: tuple[str, ...] | None = None,
     pillar_labels: dict[str, str] | None = None,
     confidence_minutes: float = RATING_CONFIDENCE_MINUTES,
     confidence_passes: float = RATING_CONFIDENCE_PASSES,
@@ -367,20 +396,29 @@ def _pillar_radar_b64(
 
     matplotlib.use("Agg")
 
-    label_map = pillar_labels or _PILLAR_RADAR_LABELS
-    section_ratings = player.get("section_ratings") if isinstance(player.get("section_ratings"), dict) else {}
+    resolved_metric_keys = metric_keys or _radar_metric_keys_from_specs(scout_section_specs)
+    label_map = pillar_labels or {
+        key: _PROGRESSION_RADAR_METRIC_LABELS.get(
+            key,
+            _CARRY_RADAR_METRIC_LABELS.get(key, _PASS_RADAR_METRIC_LABELS.get(key, key[:6])),
+        )
+        for key in resolved_metric_keys
+    }
+    metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
     labels: list[str] = []
     values: list[float] = []
-    section_keys: list[str] = []
-    for section_key, _, _, _ in scout_section_specs:
-        if section_key in PA_RADAR_EXCLUDED_SECTIONS:
+    axis_keys: list[str] = []
+    for key in resolved_metric_keys:
+        info = metric_ranks.get(key)
+        if not info:
             continue
-        score = section_ratings.get(section_key)
-        if score is None:
+        rank = int(info.get("rank") or 0)
+        total = int(info.get("total") or 0)
+        if rank <= 0 or total <= 0:
             continue
-        section_keys.append(section_key)
-        labels.append(label_map.get(section_key, section_key[:6]))
-        values.append(float(score) * 10.0)
+        axis_keys.append(key)
+        labels.append(label_map.get(key, key[:6]))
+        values.append(rank_to_display_score(rank, total))
     if len(values) < 3:
         return ""
 
@@ -409,7 +447,7 @@ def _pillar_radar_b64(
     ax.fill(angles_closed, values_closed, color=radar_fill, alpha=fill_alpha, zorder=2)
     for i in range(count):
         j = (i + 1) % count
-        is_pass = section_keys[i].startswith("pass_")
+        is_pass = not _radar_axis_is_carry(axis_keys[i], scout_section_specs)
         seg_color = PA_RADAR_PASS_COLOR if is_pass else PA_RADAR_CARRY_COLOR
         seg_style = "-" if is_pass else (0, (5, 3))
         ax.plot(
@@ -440,8 +478,12 @@ def _pillar_radar_b64(
     ax.set_yticklabels([])
     ax.set_xticks(angles)
     ax.set_xticklabels(labels, fontsize=9.0, fontweight=600)
-    for tick_label, section_key in zip(ax.get_xticklabels(), section_keys):
-        tick_label.set_color(PA_RADAR_PASS_COLOR if section_key.startswith("pass_") else PA_RADAR_CARRY_COLOR)
+    for tick_label, axis_key in zip(ax.get_xticklabels(), axis_keys):
+        tick_label.set_color(
+            PA_RADAR_PASS_COLOR
+            if not _radar_axis_is_carry(axis_key, scout_section_specs)
+            else PA_RADAR_CARRY_COLOR
+        )
     ax.tick_params(axis="x", pad=10)
     ax.grid(color="#334155", alpha=0.5, linewidth=0.7)
     ax.spines["polar"].set_color("#334155")
@@ -458,9 +500,12 @@ def _pillar_radar_inner_html(player: dict, **kwargs) -> str:
     b64 = _pillar_radar_b64(player, **kwargs)
     if not b64:
         return ""
-    pillar_count = len(kwargs.get("scout_section_specs", SCOUT_SECTION_SPECS))
+    metric_count = len(
+        kwargs.get("metric_keys")
+        or _radar_metric_keys_from_specs(kwargs.get("scout_section_specs", SCOUT_SECTION_SPECS))
+    )
     return (
-        f'<span class="rating-radar-wrap" title="{pillar_count} pillar scores">'
+        f'<span class="rating-radar-wrap" title="{metric_count} metric scores">'
         f'<img class="rating-radar" src="data:image/png;base64,{b64}" alt="Pillar radar">'
         "</span>"
     )
@@ -3100,12 +3145,12 @@ def _build_player_analysis_layout_html(
 ) -> str:
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
     layout_style = f"--pa-card-h: {PLAYER_ANALYSIS_CARD_HEIGHT_PX}px;"
-    radar_specs = _progression_radar_section_specs(scout_section_specs)
     rating_panel = _player_analysis_rating_panel_html(player, metric_ranks)
     radar_card = _pillar_radar_card_html(
         player,
-        scout_section_specs=radar_specs,
-        pillar_labels=pillar_labels or _PROGRESSION_PILLAR_RADAR_LABELS,
+        scout_section_specs=scout_section_specs,
+        metric_keys=_progression_radar_metric_keys(scout_section_specs),
+        pillar_labels=pillar_labels,
         confidence_minutes=confidence_minutes,
         confidence_passes=confidence_passes,
         radar_figsize=(3.5, 3.5),
@@ -3359,7 +3404,7 @@ def _render_carries_player_layout(player: dict, carries, dribbles) -> None:
         render_dashboard_sidebar(
             player,
             scout_section_specs=CARRIES_SCOUT_SECTION_SPECS,
-            pillar_labels=_CARRIES_PILLAR_RADAR_LABELS,
+            pillar_labels=_CARRY_RADAR_METRIC_LABELS,
             participation_keys=CARRIES_PARTICIPATION_KEYS,
             label_fn=ce_analyst_metric_label,
             tooltip_fn=ce_metric_tooltip,
@@ -3452,7 +3497,7 @@ def render_progression_player_layout(player: dict, passes, carries) -> None:
         render_dashboard_sidebar(
             player,
             scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
-            pillar_labels=_PROGRESSION_PILLAR_RADAR_LABELS,
+            pillar_labels=_PROGRESSION_RADAR_METRIC_LABELS,
             participation_keys=PROGRESSION_PARTICIPATION_KEYS,
             label_fn=pg_analyst_metric_label,
             tooltip_fn=pg_metric_tooltip,
@@ -3902,7 +3947,7 @@ def render_player_analysis_section(
     render_player_analysis_profile(
         player,
         scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
-        pillar_labels=_PROGRESSION_PILLAR_RADAR_LABELS,
+        pillar_labels=_PROGRESSION_RADAR_METRIC_LABELS,
         origin_heatmap_b64=origin_heatmap_b64,
         label_fn=pg_analyst_metric_label,
         tooltip_fn=pg_metric_tooltip,

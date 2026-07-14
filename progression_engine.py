@@ -90,6 +90,14 @@ PASS_DASHBOARD_METRIC_KEYS: tuple[str, ...] = tuple(
     )
 )
 
+CARRY_DASHBOARD_METRIC_KEYS: tuple[str, ...] = tuple(
+    dict.fromkeys(
+        key
+        for _section_key, _title, _subtitle, keys in ce.SCOUT_SECTION_SPECS
+        for key in keys
+    )
+)
+
 PROGRESSION_PARTICIPATION_KEYS: tuple[str, ...] = (
     "minutes",
     "passes_completed",
@@ -578,6 +586,9 @@ def build_progression_dashboard_player(
         out["carry_rating"] = carry_player.get("pass_rating")
         out["carry_rating_confidence"] = carry_player.get("rating_confidence")
         out["carry_rating_percentile"] = carry_player.get("rating_percentile")
+        for key in CARRY_DASHBOARD_METRIC_KEYS:
+            if carry_player.get(key) is not None:
+                out[f"carry_{key}"] = carry_player[key]
     if progression_player:
         out["progression_rating"] = progression_player.get("progression_rating")
         out["rating_confidence"] = progression_player.get("rating_confidence")
