@@ -375,6 +375,31 @@ def _progression_radar_metric_keys(
     return _radar_metric_keys_from_specs(scout_section_specs)
 
 
+def _collect_radar_metric_points(
+    metric_keys: tuple[str, ...],
+    metric_ranks: dict,
+    label_map: dict[str, str],
+    scout_section_specs,
+) -> tuple[list[str], list[str], list[float], list[bool]]:
+    labels: list[str] = []
+    keys_out: list[str] = []
+    values: list[float] = []
+    is_carry: list[bool] = []
+    for key in metric_keys:
+        info = metric_ranks.get(key)
+        if not info:
+            continue
+        rank = int(info.get("rank") or 0)
+        total = int(info.get("total") or 0)
+        if rank <= 0 or total <= 0:
+            continue
+        keys_out.append(key)
+        labels.append(label_map.get(key, key[:6]))
+        values.append(rank_to_display_score(rank, total))
+        is_carry.append(_radar_axis_is_carry(key, scout_section_specs))
+    return keys_out, labels, values, is_carry
+
+
 def _pillar_radar_b64(
     player: dict,
     *,
@@ -405,32 +430,19 @@ def _pillar_radar_b64(
         for key in resolved_metric_keys
     }
     metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
-    labels: list[str] = []
-    values: list[float] = []
-    axis_keys: list[str] = []
-    pass_indices: list[int] = []
-    carry_indices: list[int] = []
-    for key in resolved_metric_keys:
-        info = metric_ranks.get(key)
-        if not info:
-            continue
-        rank = int(info.get("rank") or 0)
-        total = int(info.get("total") or 0)
-        if rank <= 0 or total <= 0:
-            continue
-        idx = len(axis_keys)
-        axis_keys.append(key)
-        labels.append(label_map.get(key, key[:6]))
-        values.append(rank_to_display_score(rank, total))
-        if _radar_axis_is_carry(key, scout_section_specs):
-            carry_indices.append(idx)
-        else:
-            pass_indices.append(idx)
+    keys_out, labels, values, carry_flags = _collect_radar_metric_points(
+        resolved_metric_keys,
+        metric_ranks,
+        label_map,
+        scout_section_specs,
+    )
     if len(values) < 3:
         return ""
 
     count = len(values)
     angles = np.linspace(0, 2 * np.pi, count, endpoint=False)
+    values_closed = values + [values[0]]
+    angles_closed = np.append(angles, angles[0])
     low_sample = _is_low_sample_rating(
         player,
         confidence_minutes=confidence_minutes,
@@ -449,65 +461,43 @@ def _pillar_radar_b64(
     ax.set_facecolor("none")
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
-
-    def _plot_metric_group(indices: list[int], *, color: str, linestyle: str) -> None:
-        if len(indices) < 2:
-            if len(indices) == 1:
-                i = indices[0]
-                ax.plot(
-                    angles[i],
-                    values[i],
-                    marker="o",
-                    color=color,
-                    markersize=5.5,
-                    markeredgecolor="#0f172a",
-                    markeredgewidth=0.7,
-                    alpha=line_alpha,
-                    zorder=5,
-                )
-            return
-        group_angles = [angles[i] for i in indices]
-        group_values = [values[i] for i in indices]
-        angles_closed = np.append(group_angles, group_angles[0])
-        values_closed = group_values + [group_values[0]]
-        ax.fill(angles_closed, values_closed, color=radar_fill, alpha=fill_alpha, zorder=2)
+    ax.fill(angles_closed, values_closed, color=radar_fill, alpha=fill_alpha, zorder=2)
+    for i in range(count):
+        j = (i + 1) % count
+        seg_color = PA_RADAR_CARRY_COLOR if carry_flags[i] else PA_RADAR_PASS_COLOR
+        seg_style = (0, (5, 3)) if carry_flags[i] else "-"
         ax.plot(
-            angles_closed,
-            values_closed,
-            color=color,
-            linewidth=2.8,
-            linestyle=linestyle,
+            [angles[i], angles[j]],
+            [values[i], values[j]],
+            color=seg_color,
+            linewidth=2.4,
+            linestyle=seg_style,
             alpha=line_alpha,
             zorder=4,
         )
-        for angle, value in zip(group_angles, group_values):
-            ax.plot(
-                angle,
-                value,
-                marker="o",
-                color=color,
-                markersize=5.5,
-                markeredgecolor="#0f172a",
-                markeredgewidth=0.7,
-                alpha=line_alpha,
-                zorder=5,
-            )
-
-    _plot_metric_group(pass_indices, color=PA_RADAR_PASS_COLOR, linestyle="-")
-    _plot_metric_group(carry_indices, color=PA_RADAR_CARRY_COLOR, linestyle=(0, (5, 3)))
-    ax.set_ylim(4.0, 8.0)
-    ax.set_yticks([5, 6, 7])
-    ax.set_yticklabels([])
-    ax.set_xticks(angles)
-    ax.set_xticklabels(labels, fontsize=9.0, fontweight=600)
-    for tick_label, axis_key in zip(ax.get_xticklabels(), axis_keys):
-        tick_label.set_color(
-            PA_RADAR_PASS_COLOR
-            if not _radar_axis_is_carry(axis_key, scout_section_specs)
-            else PA_RADAR_CARRY_COLOR
+    for angle, value, is_carry in zip(angles, values, carry_flags):
+        marker_color = PA_RADAR_CARRY_COLOR if is_carry else PA_RADAR_PASS_COLOR
+        ax.plot(
+            angle,
+            value,
+            marker="o",
+            color=marker_color,
+            markersize=5.5,
+            markeredgecolor="#0f172a",
+            markeredgewidth=0.7,
+            alpha=line_alpha,
+            zorder=5,
         )
-    ax.tick_params(axis="x", pad=10)
-    ax.grid(color="#334155", alpha=0.5, linewidth=0.7)
+    ax.set_ylim(3.0, 9.0)
+    ax.set_yticks([4, 5, 6, 7, 8])
+    ax.set_yticklabels([])
+    label_font = 6.2 if count > 10 else 7.0
+    ax.set_xticks(angles)
+    ax.set_xticklabels(labels, fontsize=label_font, fontweight=600)
+    for tick_label, is_carry in zip(ax.get_xticklabels(), carry_flags):
+        tick_label.set_color(PA_RADAR_CARRY_COLOR if is_carry else PA_RADAR_PASS_COLOR)
+    ax.tick_params(axis="x", pad=7 if count > 10 else 8)
+    ax.grid(color="#334155", alpha=0.45, linewidth=0.6)
     ax.spines["polar"].set_color("#334155")
     ax.spines["polar"].set_alpha(0.55)
     fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
@@ -3175,7 +3165,6 @@ def _build_player_analysis_layout_html(
         pillar_labels=pillar_labels,
         confidence_minutes=confidence_minutes,
         confidence_passes=confidence_passes,
-        radar_figsize=(3.5, 3.5),
         line_color=PA_RADAR_PASS_COLOR,
         fill_color=PA_RADAR_FILL_NEUTRAL,
     )
