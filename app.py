@@ -459,8 +459,8 @@ def _pillar_radar_b64(
             alpha=line_alpha,
             zorder=4,
         )
-    for angle, value, section_key in zip(angles, values, section_keys):
-        is_pass = section_key.startswith("pass_")
+    for angle, value, axis_key in zip(angles, values, axis_keys):
+        is_pass = not _radar_axis_is_carry(axis_key, scout_section_specs)
         marker_color = PA_RADAR_PASS_COLOR if is_pass else PA_RADAR_CARRY_COLOR
         ax.plot(
             angle,
