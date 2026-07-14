@@ -22,15 +22,20 @@ SIMILARITY_MIN_MINUTES_PCT = 0.30
 SIMILARITY_PASS_METRICS: tuple[str, ...] = (
     "impact_passes_p90",
     "phi_p90",
-    "dxt_p90",
     "impact_per_pass",
     "phi_per_pass",
     "positive_dxt_pct",
     "dxt_gt_01_pct",
     "construction_aip_p90",
-    "construction_aip_per_pass",
     "aggression_aip_p90",
-    "aggression_aip_per_pass",
+)
+
+SIMILARITY_CARRY_METRIC_SOURCES: tuple[str, ...] = (
+    "impact_passes_p90",
+    "phi_p90",
+    "dxt_p90",
+    "dxt_per_pass",
+    "dxt_gt_015_pct",
 )
 
 CARRY_METRIC_SOURCES: tuple[str, ...] = (
@@ -50,19 +55,19 @@ def carry_metric_key(source_key: str) -> str:
 
 
 SIMILARITY_CARRY_METRICS: tuple[str, ...] = tuple(
-    carry_metric_key(key) for key in CARRY_METRIC_SOURCES
+    carry_metric_key(key) for key in SIMILARITY_CARRY_METRIC_SOURCES
 )
 
 SIMILARITY_METRICS_A: tuple[str, ...] = SIMILARITY_PASS_METRICS + SIMILARITY_CARRY_METRICS
 
 SIMILARITY_COMPARE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Passing Threat (Per Game)", ("impact_passes_p90", "phi_p90", "dxt_p90")),
+    ("Passing Threat (Per Game)", ("impact_passes_p90", "phi_p90")),
     (
         "Pass Effectivness",
         ("impact_per_pass", "phi_per_pass", "positive_dxt_pct", "dxt_gt_01_pct"),
     ),
-    ("Build-Up", ("construction_aip_p90", "construction_aip_per_pass")),
-    ("Attacking Zone", ("aggression_aip_p90", "aggression_aip_per_pass")),
+    ("Build-Up", ("construction_aip_p90",)),
+    ("Attacking Zone", ("aggression_aip_p90",)),
     (
         "Carrying Threat (Per Game)",
         tuple(carry_metric_key(k) for k in ("impact_passes_p90", "phi_p90", "dxt_p90")),
@@ -71,13 +76,6 @@ SIMILARITY_COMPARE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "Carry Effectiveness",
         tuple(carry_metric_key(k) for k in ("dxt_per_pass", "dxt_gt_015_pct")),
     ),
-    (
-        "Final Third Threat (Per Game)",
-        tuple(
-            carry_metric_key(k)
-            for k in ("carries_to_box_p90", "carries_impact_to_box_p90", "dribbles_final_third_p90")
-        ),
-    ),
 )
 
 # Option C — z-score distance (higher weight on core impact volume).
@@ -85,23 +83,17 @@ SIMILARITY_METRICS_C: tuple[str, ...] = SIMILARITY_METRICS_A
 SIMILARITY_WEIGHTS_C: dict[str, float] = {
     "impact_passes_p90": 2.0,
     "phi_p90": 2.0,
-    "dxt_p90": 2.0,
     "impact_per_pass": 1.5,
     "positive_dxt_pct": 1.5,
     "phi_per_pass": 1.5,
     "dxt_gt_01_pct": 1.0,
     "construction_aip_p90": 1.0,
-    "construction_aip_per_pass": 1.0,
     "aggression_aip_p90": 1.0,
-    "aggression_aip_per_pass": 1.0,
     carry_metric_key("impact_passes_p90"): 2.0,
     carry_metric_key("phi_p90"): 2.0,
     carry_metric_key("dxt_p90"): 2.0,
     carry_metric_key("dxt_per_pass"): 1.5,
     carry_metric_key("dxt_gt_015_pct"): 1.5,
-    carry_metric_key("carries_to_box_p90"): 1.0,
-    carry_metric_key("carries_impact_to_box_p90"): 1.0,
-    carry_metric_key("dribbles_final_third_p90"): 1.0,
 }
 
 SIMILARITY_METRIC_LABELS: dict[str, str] = {
@@ -128,9 +120,7 @@ SIMILARITY_METRIC_LABELS: dict[str, str] = {
 
 SIMILARITY_TRADITIONAL_METRICS: tuple[str, ...] = (
     "passes_total",
-    "pass_completion_pct",
     "long_balls",
-    "long_ball_completion_pct",
     "progressive_passes",
     "final_third_passes",
     "passes_to_box",
@@ -144,9 +134,7 @@ SIMILARITY_TRADITIONAL_METRICS: tuple[str, ...] = (
 
 SIMILARITY_TRADITIONAL_WEIGHTS: dict[str, float] = {
     "passes_total": 1.0,
-    "pass_completion_pct": 1.0,
     "long_balls": 1.0,
-    "long_ball_completion_pct": 1.0,
     "progressive_passes": 1.5,
     "final_third_passes": 1.0,
     "passes_to_box": 1.0,
