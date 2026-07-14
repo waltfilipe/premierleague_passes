@@ -16,10 +16,26 @@ DUAL_ELITE_PERCENTILE = 90.0
 
 _progression_thresholds_override: dict[str, dict[str, float]] | None = None
 
-PROGRESSION_PASS_RATING_KEYS: tuple[str, ...] = pe.PASS_RATING_METRIC_KEYS
+PROGRESSION_PASS_RATING_KEYS: tuple[str, ...] = (
+    "impact_passes_p90",
+    "impact_per_pass",
+    "risk_pass_pct",
+    "positive_dxt_pct",
+    "construction_aip_p90",
+    "aggression_aip_p90",
+)
+
+_PROGRESSION_CARRY_RATING_SOURCES: tuple[str, ...] = (
+    "impact_passes_p90",
+    "dxt_per_pass",
+    "threat_carry_pct",
+    "positive_dxt_pct",
+    "carries_impact_to_box_p90",
+    "dribbles_final_third_p90",
+)
 
 PROGRESSION_CARRY_RATING_KEYS: tuple[str, ...] = tuple(
-    f"carry_{key}" for key in ce.CARRY_RATING_METRIC_KEYS
+    f"carry_{key}" for key in _PROGRESSION_CARRY_RATING_SOURCES
 )
 
 PROGRESSION_RATING_METRIC_KEYS: tuple[str, ...] = PROGRESSION_PASS_RATING_KEYS + PROGRESSION_CARRY_RATING_KEYS
@@ -49,8 +65,8 @@ CARRY_METRIC_KEYS: tuple[str, ...] = tuple(
     )
 )
 
-COMBINED_RATING_DIMENSIONS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = pe._equal_weight_rating_dimensions(
-    PROGRESSION_RATING_METRIC_KEYS,
+COMBINED_RATING_DIMENSIONS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = tuple(
+    (key, ((key, 1.0),)) for key in PROGRESSION_RATING_METRIC_KEYS
 )
 
 COMBINED_RATING_METRIC_KEYS: tuple[str, ...] = PROGRESSION_RATING_METRIC_KEYS
