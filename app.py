@@ -528,6 +528,7 @@ def _plot_player_radar_on_ax(
     pass_color: str,
     carry_color: str,
     draw_fill: bool = True,
+    dashed_carry_segments: bool = True,
 ) -> None:
     import numpy as np
 
@@ -539,7 +540,7 @@ def _plot_player_radar_on_ax(
     for i in range(count):
         j = (i + 1) % count
         seg_color = carry_color if carry_flags[i] else pass_color
-        seg_style = (0, (5, 3)) if carry_flags[i] else "-"
+        seg_style = (0, (5, 3)) if (dashed_carry_segments and carry_flags[i]) else "-"
         ax.plot(
             [angles[i], angles[j]],
             [values[i], values[j]],
@@ -619,6 +620,7 @@ def _pillar_radar_compare_b64(
         pass_color=PA_COMPARE_PRIMARY_COLOR,
         carry_color=PA_COMPARE_PRIMARY_COLOR,
         draw_fill=True,
+        dashed_carry_segments=False,
     )
     _plot_player_radar_on_ax(
         ax,
@@ -631,6 +633,7 @@ def _pillar_radar_compare_b64(
         pass_color=PA_COMPARE_SECONDARY_COLOR,
         carry_color=PA_COMPARE_SECONDARY_COLOR,
         draw_fill=False,
+        dashed_carry_segments=False,
     )
 
     ax.set_ylim(3.0, 9.0)
@@ -1801,13 +1804,12 @@ st.markdown(
     }
     .pa-compare-legend-primary::before { background: #a78bfa; }
     .pa-compare-legend-secondary::before { background: #86efac; }
-    .pa-maps-grid {
-        max-width: 680px;
-        margin: 0.25rem auto 0 auto;
+    .pa-maps-grid-marker {
+        display: none;
     }
-    .pa-maps-grid [data-testid="stHorizontalBlock"] {
-        gap: 0.4rem;
-        justify-content: center;
+    [data-testid="stVerticalBlock"]:has(.pa-maps-grid-marker) [data-testid="stHorizontalBlock"] {
+        gap: 0.45rem;
+        align-items: stretch;
     }
     .pa-stats-filter {
         display: grid;
@@ -2517,13 +2519,22 @@ def _player_position_code(player: dict) -> str:
     return str(player.get("position") or "").strip().upper()
 
 
+def _all_position_codes() -> frozenset[str]:
+    codes: set[str] = set()
+    for _, _, block_codes in PLAYER_ANALYSIS_POSITION_BLOCKS:
+        codes.update(block_codes)
+    return frozenset(codes)
+
+
 def _position_codes_from_blocks(block_ids: set[str]) -> frozenset[str]:
+    if not block_ids:
+        return _all_position_codes()
     codes: set[str] = set()
     for block_id in block_ids:
         entry = PLAYER_POSITION_BLOCK_BY_ID.get(block_id)
         if entry:
             codes.update(entry[1])
-    return frozenset(codes)
+    return frozenset(codes) if codes else _all_position_codes()
 
 
 def _position_blocks_for_player(player: dict) -> set[str]:
@@ -2550,7 +2561,7 @@ def _clear_stale_position_toggle_query() -> None:
 def _render_position_block_slicer(*, key_prefix: str = "pa") -> frozenset[str]:
     state_key = PLAYER_ANALYSIS_POSITION_BLOCKS_KEY
     if state_key not in st.session_state:
-        st.session_state[state_key] = {block_id for block_id, _, _ in PLAYER_ANALYSIS_POSITION_BLOCKS}
+        st.session_state[state_key] = set()
 
     selected: set[str] = set(st.session_state[state_key])
     st.markdown('<div class="pa-position-slicer-marker"></div>', unsafe_allow_html=True)
@@ -2565,9 +2576,9 @@ def _render_position_block_slicer(*, key_prefix: str = "pa") -> frozenset[str]:
                 type="primary" if is_selected else "secondary",
                 use_container_width=True,
             ):
-                if is_selected and len(selected) > 1:
+                if is_selected:
                     selected.discard(block_id)
-                elif not is_selected:
+                else:
                     selected.add(block_id)
                 st.session_state[state_key] = selected
                 st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
@@ -2575,9 +2586,6 @@ def _render_position_block_slicer(*, key_prefix: str = "pa") -> frozenset[str]:
                 st.session_state.pop(PLAYER_ANALYSIS_COMPARE_KEY, None)
                 st.rerun()
 
-    if not selected:
-        selected = {PLAYER_ANALYSIS_POSITION_BLOCKS[0][0]}
-        st.session_state[state_key] = selected
     return _position_codes_from_blocks(selected)
 
 
@@ -2643,50 +2651,46 @@ def _player_analysis_options(
     ]
 
 
-def _render_shared_player_slicers(
+def _render_player_select_slicer(
     all_players: list[dict],
     progression_by_id: dict[str, dict],
     players_by_id: dict[str, dict],
     *,
-    key_prefix: str = "pa",
+    key_prefix: str,
+    position_codes: frozenset[str],
+    sync_from_url: bool = True,
 ) -> str | None:
-    """Position block slicer + player selectbox. Returns selected player_id or None."""
-    _sync_player_analysis_selection(players_by_id, {})
+    st.markdown('<div class="pa-player-slicer">', unsafe_allow_html=True)
+    options = _player_analysis_options(
+        all_players,
+        progression_by_id,
+        position_codes=position_codes,
+    )
+    if not options:
+        st.info("Nenhum jogador disponível para as posições selecionadas.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return None
 
-    pos_col, player_col = st.columns([2.1, 1], gap="medium")
-    with pos_col:
-        position_codes = _render_position_block_slicer(key_prefix=key_prefix)
-    with player_col:
-        st.markdown('<div class="pa-player-slicer">', unsafe_allow_html=True)
-        options = _player_analysis_options(
-            all_players,
-            progression_by_id,
-            position_codes=position_codes,
-        )
-        if not options:
-            st.info("Nenhum jogador disponível para as posições selecionadas.")
-            st.markdown("</div>", unsafe_allow_html=True)
-            return None
+    labels = [o[3] for o in options]
+    id_by_label = {o[3]: o[0] for o in options}
+    label_by_id = {o[0]: o[3] for o in options}
 
-        labels = [o[3] for o in options]
-        id_by_label = {o[3]: o[0] for o in options}
-        label_by_id = {o[0]: o[3] for o in options}
-
+    if sync_from_url:
         _sync_player_analysis_selection(players_by_id, label_by_id)
 
-        select_key = _player_select_widget_key(key_prefix)
-        current_label = st.session_state.get(select_key)
-        if current_label and current_label not in labels:
-            st.session_state.pop(select_key, None)
-        _sync_player_select_from_map_id(label_by_id, labels, key_prefix=key_prefix)
+    select_key = _player_select_widget_key(key_prefix)
+    current_label = st.session_state.get(select_key)
+    if current_label and current_label not in labels:
+        st.session_state.pop(select_key, None)
+    _sync_player_select_from_map_id(label_by_id, labels, key_prefix=key_prefix)
 
-        selected_label = st.selectbox(
-            "Jogador",
-            options=labels,
-            key=select_key,
-            placeholder="Selecione um jogador",
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
+    selected_label = st.selectbox(
+        "Jogador",
+        options=labels,
+        key=select_key,
+        placeholder="Selecione um jogador",
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
     if not selected_label:
         st.info("Selecione um jogador para continuar.")
@@ -2709,6 +2713,42 @@ def _render_shared_player_slicers(
                 pass
             st.session_state.pop("_pa_url_player_id", None)
     return player_id
+
+
+def _render_shared_player_slicers(
+    all_players: list[dict],
+    progression_by_id: dict[str, dict],
+    players_by_id: dict[str, dict],
+    *,
+    key_prefix: str = "pa",
+    show_position_blocks: bool = True,
+) -> str | None:
+    """Position block slicer + player selectbox. Returns selected player_id or None."""
+    if show_position_blocks:
+        _sync_player_analysis_selection(players_by_id, {})
+        pos_col, player_col = st.columns([2.1, 1], gap="medium")
+        with pos_col:
+            position_codes = _render_position_block_slicer(key_prefix=key_prefix)
+        with player_col:
+            return _render_player_select_slicer(
+                all_players,
+                progression_by_id,
+                players_by_id,
+                key_prefix=key_prefix,
+                position_codes=position_codes,
+                sync_from_url=True,
+            )
+
+    _, player_col, _ = st.columns([1, 1.2, 1])
+    with player_col:
+        return _render_player_select_slicer(
+            all_players,
+            progression_by_id,
+            players_by_id,
+            key_prefix=key_prefix,
+            position_codes=_all_position_codes(),
+            sync_from_url=False,
+        )
 
 
 def _sync_player_selection(
@@ -4217,52 +4257,87 @@ def _resolve_progression_analysis_player(
 
 
 MAPS_TAB_PLOT_WIDTH = 300
-MAPS_TAB_ORIGIN_WIDTH = 420
 
 
-def _render_map_pyplot(fig, *, width: int = MAPS_TAB_PLOT_WIDTH) -> None:
+def _render_map_pyplot(fig, *, width: int | str = "stretch") -> None:
     st.pyplot(fig, clear_figure=True, width=width)
+
+
+def _render_maps_tab_grid(player: dict, passes, carries) -> None:
+    """Maps tab: 3 equal maps on row 1, 2 equal maps centered on row 2."""
+    st.markdown('<div class="pa-maps-grid-marker"></div>', unsafe_allow_html=True)
+    team_label = player.get("team", "—")
+    player_name = str(player.get("player_name", ""))
+    compact = True
+    has_actions = (
+        (passes is not None and not passes.empty)
+        or (carries is not None and not carries.empty)
+    )
+
+    row1c1, row1c2, row1c3 = st.columns(3, gap="small")
+    with row1c1:
+        if has_actions:
+            fig_origin = draw_action_origin_smooth_heatmap(
+                passes,
+                carries,
+                player_name,
+                profile=False,
+                mini=True,
+            )
+            _render_map_pyplot(fig_origin)
+        else:
+            st.info("Sem ações com coordenadas.")
+    with row1c2:
+        fig_all = draw_all_actions_map(
+            passes, carries, player_name, team_label, compact=compact,
+        )
+        _render_map_pyplot(fig_all)
+    with row1c3:
+        fig_heat_all = draw_all_actions_heatmap(
+            passes, carries, player_name, team_label, compact=compact,
+        )
+        _render_map_pyplot(fig_heat_all)
+
+    row2pad_l, row2c1, row2c2, row2pad_r = st.columns([0.5, 1, 1, 0.5], gap="small")
+    with row2c1:
+        fig_threat = draw_threat_actions_map(
+            passes, carries, player_name, team_label, compact=compact,
+        )
+        _render_map_pyplot(fig_threat)
+    with row2c2:
+        fig_heat_threat = draw_threat_actions_heatmap(
+            passes, carries, player_name, team_label, compact=compact,
+        )
+        _render_map_pyplot(fig_heat_threat)
 
 
 def render_progression_maps_only(player: dict, passes, carries, *, compact: bool = False) -> None:
     team_label = player.get("team", "—")
     player_name = player["player_name"]
-    plot_width = MAPS_TAB_PLOT_WIDTH if compact else "stretch"
+    plot_width = "stretch" if compact else "stretch"
     r1c1, r1c2 = st.columns(2, gap="small")
     with r1c1:
         fig_all = draw_all_actions_map(
             passes, carries, player_name, team_label, compact=compact,
         )
-        if compact:
-            _render_map_pyplot(fig_all, width=MAPS_TAB_PLOT_WIDTH)
-        else:
-            st.pyplot(fig_all, clear_figure=True, width=plot_width)
+        st.pyplot(fig_all, clear_figure=True, width=plot_width)
     with r1c2:
         fig_heat_all = draw_all_actions_heatmap(
             passes, carries, player_name, team_label, compact=compact,
         )
-        if compact:
-            _render_map_pyplot(fig_heat_all, width=MAPS_TAB_PLOT_WIDTH)
-        else:
-            st.pyplot(fig_heat_all, clear_figure=True, width=plot_width)
+        st.pyplot(fig_heat_all, clear_figure=True, width=plot_width)
 
     r2c1, r2c2 = st.columns(2, gap="small")
     with r2c1:
         fig_threat = draw_threat_actions_map(
             passes, carries, player_name, team_label, compact=compact,
         )
-        if compact:
-            _render_map_pyplot(fig_threat, width=MAPS_TAB_PLOT_WIDTH)
-        else:
-            st.pyplot(fig_threat, clear_figure=True, width=plot_width)
+        st.pyplot(fig_threat, clear_figure=True, width=plot_width)
     with r2c2:
         fig_heat_threat = draw_threat_actions_heatmap(
             passes, carries, player_name, team_label, compact=compact,
         )
-        if compact:
-            _render_map_pyplot(fig_heat_threat, width=MAPS_TAB_PLOT_WIDTH)
-        else:
-            st.pyplot(fig_heat_threat, clear_figure=True, width=plot_width)
+        st.pyplot(fig_heat_threat, clear_figure=True, width=plot_width)
 
 
 def _sync_player_analysis_selection(
@@ -4445,6 +4520,7 @@ def render_maps_section(
         progression_by_id,
         players_by_id,
         key_prefix="maps",
+        show_position_blocks=False,
     )
     if not player_id:
         return
@@ -4462,29 +4538,11 @@ def render_maps_section(
         st.warning("Could not build a profile for this player.")
         return
 
-    _, maps_col, _ = st.columns([0.55, 1.4, 0.55])
+    _, maps_col, _ = st.columns([0.35, 1.6, 0.35])
     with maps_col:
         passes_df = passes_by_player.get(player_id)
         carries_df = carries_by_player.get(player_id)
-        has_actions = (
-            (passes_df is not None and not passes_df.empty)
-            or (carries_df is not None and not carries_df.empty)
-        )
-        if has_actions:
-            oc1, oc2, oc3 = st.columns([0.2, 1, 0.2])
-            with oc2:
-                fig_origin = draw_action_origin_smooth_heatmap(
-                    passes_df,
-                    carries_df,
-                    str(player.get("player_name", "")),
-                    profile=False,
-                    mini=True,
-                )
-                _render_map_pyplot(fig_origin, width=MAPS_TAB_ORIGIN_WIDTH)
-        else:
-            st.info("Sem ações com coordenadas para este jogador.")
-
-        render_progression_maps_only(player, passes_df, carries_df, compact=True)
+        _render_maps_tab_grid(player, passes_df, carries_df)
 
 
 def render_player_analysis_section(
