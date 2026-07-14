@@ -21,12 +21,10 @@ SIMILARITY_MIN_MINUTES_PCT = 0.30
 # Option A — percentile profile (pass + carry metric groups).
 SIMILARITY_PASS_METRICS: tuple[str, ...] = (
     "impact_passes_p90",
-    "phi_p90",
     "impact_per_pass",
-    "phi_per_pass",
-    "positive_dxt_pct",
-    "dxt_gt_01_pct",
     "risk_passes_p90",
+    "threat_pass_pct",
+    "positive_dxt_pct",
     "dist_short_impact_p90",
     "dist_medium_impact_p90",
     "dist_long_impact_p90",
@@ -65,15 +63,10 @@ SIMILARITY_CARRY_METRICS: tuple[str, ...] = tuple(
 SIMILARITY_METRICS_A: tuple[str, ...] = SIMILARITY_PASS_METRICS + SIMILARITY_CARRY_METRICS
 
 SIMILARITY_COMPARE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Passing Threat (Per Game)", ("impact_passes_p90", "phi_p90")),
+    ("Passing Threat (Per Game)", ("impact_passes_p90", "impact_per_pass")),
     (
-        "Pass Effectivness",
-        (
-            "impact_per_pass",
-            "phi_per_pass",
-            "positive_dxt_pct",
-            "dxt_gt_01_pct",
-        ),
+        "Risk Passes",
+        ("risk_passes_p90", "threat_pass_pct", "positive_dxt_pct"),
     ),
     (
         "Distance",
@@ -83,7 +76,6 @@ SIMILARITY_COMPARE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "dist_long_impact_p90",
         ),
     ),
-    ("Risk Pass", ("risk_passes_p90",)),
     ("Pass Types", ("construction_aip_p90", "aggression_aip_p90")),
     (
         "Carrying Threat (Per Game)",
@@ -99,15 +91,13 @@ SIMILARITY_COMPARE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
 SIMILARITY_METRICS_C: tuple[str, ...] = SIMILARITY_METRICS_A
 SIMILARITY_WEIGHTS_C: dict[str, float] = {
     "impact_passes_p90": 2.0,
-    "phi_p90": 2.0,
     "impact_per_pass": 1.5,
-    "positive_dxt_pct": 1.5,
-    "phi_per_pass": 1.5,
     "risk_passes_p90": 1.0,
+    "threat_pass_pct": 1.0,
+    "positive_dxt_pct": 1.5,
     "dist_short_impact_p90": 1.0,
     "dist_medium_impact_p90": 1.0,
     "dist_long_impact_p90": 1.0,
-    "dxt_gt_01_pct": 1.0,
     "construction_aip_p90": 1.0,
     "aggression_aip_p90": 1.0,
     carry_metric_key("impact_passes_p90"): 2.0,
@@ -119,16 +109,13 @@ SIMILARITY_WEIGHTS_C: dict[str, float] = {
 
 SIMILARITY_METRIC_LABELS: dict[str, str] = {
     "impact_passes_p90": "Threat Passes",
-    "phi_p90": "High Threat Passes",
-    "dxt_p90": "Pass Threat",
     "impact_per_pass": "Average Pass Threat",
-    "phi_per_pass": "Average High Threat Passes",
-    "risk_passes_p90": "Risk Pass",
+    "risk_passes_p90": "Risk Passes",
+    "threat_pass_pct": "Threat Pass Rate",
+    "positive_dxt_pct": "% Passes with Positive ΔxT (+0.5)",
     "dist_short_impact_p90": "< 12 m",
     "dist_medium_impact_p90": "12–25 m",
     "dist_long_impact_p90": "≥ 25 m",
-    "positive_dxt_pct": "% Passes with Positive ΔxT (+0.5)",
-    "dxt_gt_01_pct": "% High Threat Passes",
     "construction_aip_p90": "Build-Up Impact Passes (Per game)",
     "aggression_aip_p90": "Attacking Impact Passes (Per game)",
     carry_metric_key("impact_passes_p90"): "Threat Carries",

@@ -18,7 +18,6 @@ REQUEST_TIMEOUT_SEC = 8
 
 GENERAL_PROFILE_LABELS: dict[str, str] = {
     "minutes": "Minutes played",
-    "minutes_pct": "Minutes %",
     "age": "Age",
     "height": "Height",
     "dominant_foot": "Dominant foot",
