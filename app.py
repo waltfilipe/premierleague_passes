@@ -50,7 +50,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 import passes_engine as pe
-from heuristic_scoring import GROUP_COLORS, position_group_label
+from heuristic_scoring import GROUP_COLORS, position_group_label, rating_position_group
 sim = _load_similarity_engine()
 from comparison_config import (
     CLASSIFICATION_MODEL_DEFAULT,
@@ -738,6 +738,23 @@ def _progression_compare_stats_html(
     return "".join(rows)
 
 
+def _position_codes_for_rating_group(player: dict) -> frozenset[str]:
+    """All short positions in the same rating pool (e.g. all fullbacks, all wingers)."""
+    from heuristic_scoring import _RATING_POSITION_TO_GROUP
+
+    group = str(
+        player.get("position_group")
+        or rating_position_group(_player_position_code(player))
+        or ""
+    )
+    if not group:
+        return _all_position_codes()
+    codes = {
+        pos for pos, grp in _RATING_POSITION_TO_GROUP.items() if grp == group
+    }
+    return frozenset(codes) if codes else _all_position_codes()
+
+
 def _render_player_comparison_panel(
     primary: dict,
     *,
@@ -745,15 +762,15 @@ def _render_player_comparison_panel(
     progression_by_id: dict[str, dict],
 ) -> None:
     primary_id = str(primary.get("player_id"))
-    primary_position = _player_position_code(primary)
+    compare_position_codes = _position_codes_for_rating_group(primary)
     options = _player_analysis_options(
         all_players,
         progression_by_id,
-        position_codes=frozenset({primary_position}) if primary_position else frozenset(),
+        position_codes=compare_position_codes,
         exclude_player_id=primary_id,
     )
     if not options:
-        st.info("Nenhum outro jogador disponível na mesma posição para comparação.")
+        st.info("Nenhum outro jogador disponível no mesmo grupo de posição para comparação.")
         return
 
     labels = [o[3] for o in options]
@@ -1554,7 +1571,7 @@ st.markdown(
         border: 1px solid #2a3550;
         border-radius: 10px;
         margin-bottom: 0.45rem;
-        overflow: hidden;
+        overflow: visible;
     }
     .grade-accordion summary {
         list-style: none;
@@ -1563,6 +1580,9 @@ st.markdown(
         display: flex;
         align-items: center;
         gap: 0.55rem;
+        overflow: visible;
+        position: relative;
+        z-index: 1;
     }
     .grade-accordion summary::-webkit-details-marker { display: none; }
     .grade-arrow {
@@ -1893,6 +1913,22 @@ st.markdown(
     }
     .grade-card-title-row .rank-tip {
         flex-shrink: 0;
+        z-index: 2;
+    }
+    .grade-card-title-row .section-avg-rank-tip:hover {
+        z-index: 40;
+    }
+    .grade-card-title-row .section-avg-rank-tip .rank-tipbox {
+        left: auto;
+        right: 0;
+        top: calc(100% + 6px);
+        bottom: auto;
+        transform: none;
+        z-index: 50;
+    }
+    .grade-card-title-row .section-avg-rank-tip:hover .rank-bar {
+        position: relative;
+        z-index: 41;
     }
     .pa-minutes-inline-sub {
         color: #64748b;
@@ -2226,9 +2262,11 @@ st.markdown(
     }
     .pa-pillars-stack .grade-accordion {
         margin-bottom: 0;
+        overflow: visible;
     }
     .pa-pillars-stack .grade-accordion summary {
         padding: 0.5rem 0.6rem;
+        overflow: visible;
     }
     .pa-pillars-stack .grade-card-title {
         font-size: 0.8rem;
@@ -3377,7 +3415,7 @@ def _section_metric_avg_rank_bar_html(player: dict, keys: tuple[str, ...]) -> st
     color = score_display_color(avg_score)
     width_pct = max(6.0, min(100.0, (avg_score - 3.0) / 6.0 * 100.0))
     return (
-        f'<span class="rank-tip">'
+        f'<span class="rank-tip section-avg-rank-tip">'
         f'<span class="rank-bar">'
         f'<span class="rank-bar-fill" style="width:{width_pct:.0f}%;background:{color}"></span>'
         f"</span>"
