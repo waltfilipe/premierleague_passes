@@ -34,7 +34,7 @@ except ImportError:
 SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles.csv"
 SEASON_SERIEA_CARRY_CSV_PATH = Path(__file__).resolve().parent / "season_carries_dribbles_seriea.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 5
+DATA_CACHE_VERSION = 6
 
 CARRY_CATEGORIES = frozenset({"ball-carries", "dribbles"})
 
@@ -153,35 +153,23 @@ RANKING_METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 
-RATING_DIMENSIONS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = (
-    (
-        "impact",
-        (
-            ("impact_passes_p90", RATING_VOLUME_WEIGHT),
-            ("dxt_per_pass", RATING_EFFICIENCY_WEIGHT),
-        ),
-    ),
-    (
-        "phi",
-        (
-            ("phi_p90", RATING_VOLUME_WEIGHT),
-            ("dxt_gt_015_pct", RATING_EFFICIENCY_WEIGHT),
-        ),
-    ),
-    (
-        "dxt",
-        (
-            ("dxt_p90", RATING_VOLUME_WEIGHT),
-            ("positive_dxt_pct", RATING_EFFICIENCY_WEIGHT),
-        ),
-    ),
-    (
-        "decisive",
-        (
-            ("dxt_gt_015_pct", 0.6),
-            ("carries_impact_to_box_p90", 0.4),
-        ),
-    ),
+def _equal_weight_rating_dimensions(
+    keys: tuple[str, ...],
+) -> tuple[tuple[str, tuple[tuple[str, float], ...]], ...]:
+    return tuple((key, ((key, 1.0),)) for key in keys)
+
+
+CARRY_RATING_METRIC_KEYS: tuple[str, ...] = (
+    "impact_passes_p90",
+    "dxt_per_pass",
+    "threat_carry_pct",
+    "positive_dxt_pct",
+    "carries_impact_to_box_p90",
+    "dribbles_final_third_p90",
+)
+
+RATING_DIMENSIONS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = _equal_weight_rating_dimensions(
+    CARRY_RATING_METRIC_KEYS,
 )
 
 RATING_METRIC_KEYS: tuple[str, ...] = tuple(
@@ -196,7 +184,7 @@ METRIC_LABELS: dict[str, str] = {
     "phi_p90": "High-Threat Carries",
     "dxt_p90": "Carry Threat",
     "dxt_per_pass": "Average Carry Threat",
-    "threat_carry_pct": "% Threat Carries",
+    "threat_carry_pct": "% Risk Carries",
     "dxt_gt_015_pct": "% High-Threat Carries",
     "positive_dxt_pct": "% Carries with Positive ΔxT",
     "carries_to_box_p90": "Box Entries",

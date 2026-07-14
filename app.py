@@ -154,6 +154,7 @@ CARRIES_PARTICIPATION_KEYS: tuple[str, ...] = (
 
 PROGRESSION_DATA_CACHE_VERSION = pge.DATA_CACHE_VERSION
 PROGRESSION_SCOUT_SECTION_SPECS = pge.PROGRESSION_SCOUT_SECTION_SPECS
+PROGRESSION_RADAR_METRIC_KEYS = pge.PROGRESSION_RADAR_METRIC_KEYS
 PROGRESSION_PARTICIPATION_KEYS = pge.PROGRESSION_PARTICIPATION_KEYS
 TRADITIONAL_PARTICIPATION_KEYS = getattr(
     pge,
@@ -315,14 +316,13 @@ def _rating_badges_html(player: dict) -> str:
 _PROGRESSION_RADAR_METRIC_LABELS: dict[str, str] = {
     "impact_passes_p90": "Thr P90",
     "impact_per_pass": "Avg Thr",
-    "risk_passes_p90": "Risk P90",
     "risk_pass_pct": "Risk %",
     "positive_dxt_pct": "P +ΔxT",
     "construction_aip_p90": "Build",
     "aggression_aip_p90": "Attack",
     "carry_impact_passes_p90": "C Thr",
     "carry_dxt_per_pass": "C Avg",
-    "carry_threat_carry_pct": "C Thr %",
+    "carry_threat_carry_pct": "C Risk %",
     "carry_positive_dxt_pct": "C +ΔxT",
     "carry_carries_impact_to_box_p90": "Box Thr",
     "carry_dribbles_final_third_p90": "FT Drib",
@@ -372,7 +372,7 @@ def _progression_radar_section_specs(
 def _progression_radar_metric_keys(
     scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
 ) -> tuple[str, ...]:
-    return _radar_metric_keys_from_specs(scout_section_specs)
+    return PROGRESSION_RADAR_METRIC_KEYS
 
 
 def _collect_radar_metric_points(

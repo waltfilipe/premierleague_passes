@@ -16,6 +16,24 @@ DUAL_ELITE_PERCENTILE = 90.0
 
 _progression_thresholds_override: dict[str, dict[str, float]] | None = None
 
+PROGRESSION_PASS_RATING_KEYS: tuple[str, ...] = pe.PASS_RATING_METRIC_KEYS
+
+PROGRESSION_CARRY_RATING_KEYS: tuple[str, ...] = tuple(
+    f"carry_{key}" for key in ce.CARRY_RATING_METRIC_KEYS
+)
+
+PROGRESSION_RATING_METRIC_KEYS: tuple[str, ...] = PROGRESSION_PASS_RATING_KEYS + PROGRESSION_CARRY_RATING_KEYS
+
+PROGRESSION_RADAR_METRIC_KEYS: tuple[str, ...] = PROGRESSION_RATING_METRIC_KEYS
+
+POSITION_BLOCK_WEIGHTS: dict[str, tuple[float, float]] = {
+    "centerbacks": (0.7, 0.3),
+    "fullbacks": (0.5, 0.5),
+    "midfielders": (0.6, 0.4),
+    "wingers": (0.4, 0.6),
+    "strikers": (0.3, 0.7),
+}
+
 CARRY_METRIC_KEYS: tuple[str, ...] = tuple(
     dict.fromkeys(
         (
@@ -31,21 +49,11 @@ CARRY_METRIC_KEYS: tuple[str, ...] = tuple(
     )
 )
 
-COMBINED_RATING_DIMENSIONS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = tuple(
-    pe.RATING_DIMENSIONS
-) + tuple(
-    (
-        f"carry_{dim}",
-        tuple((f"carry_{key}", weight) for key, weight in components),
-    )
-    for dim, components in ce.RATING_DIMENSIONS
+COMBINED_RATING_DIMENSIONS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = pe._equal_weight_rating_dimensions(
+    PROGRESSION_RATING_METRIC_KEYS,
 )
 
-COMBINED_RATING_METRIC_KEYS: tuple[str, ...] = tuple(
-    dict.fromkeys(
-        key for _, components in COMBINED_RATING_DIMENSIONS for key, _ in components
-    )
-)
+COMBINED_RATING_METRIC_KEYS: tuple[str, ...] = PROGRESSION_RATING_METRIC_KEYS
 
 COMBINED_SECTION_RATING_GROUPS: dict[str, tuple[str, ...]] = {
     f"pass_{section_key}": keys
@@ -59,8 +67,14 @@ COMBINED_SECTION_RATING_GROUPS.update({
 COMBINED_RANK_DISPLAY_KEYS: tuple[str, ...] = tuple(
     dict.fromkeys(
         (
-            *pe.RANK_DISPLAY_KEYS,
-            *(f"carry_{key}" for key in ce.RANK_DISPLAY_KEYS if key not in {"minutes", "minutes_pct"}),
+            "minutes",
+            "passes_completed",
+            "minutes_pct",
+            *PROGRESSION_RATING_METRIC_KEYS,
+            *pe.DISTANCE_METRIC_KEYS,
+            *pe.RISK_PASS_METRIC_KEYS,
+            *pe.PASS_TYPES_METRIC_KEYS,
+            *(f"carry_{key}" for key in ce.RISK_CARRY_METRIC_KEYS),
             *(f"carry_{key}" for key in ce.GENERAL_CARRIES_DRIBBLES_METRIC_KEYS),
             "carries_total",
             "dribbles_total",
@@ -405,6 +419,152 @@ def _progression_rating_confidence(player: dict) -> float:
     return min(pass_conf, carry_conf)
 
 
+def _progression_block_weights(position_group: str) -> tuple[float, float]:
+    return POSITION_BLOCK_WEIGHTS.get(str(position_group or "midfielders"), (0.5, 0.5))
+
+
+def _progression_metric_matrix(
+    pool: list[dict],
+    shrunk_values: dict[str, dict[str, float]],
+) -> tuple[np.ndarray, list[str]]:
+    pids = [str(p["player_id"]) for p in pool]
+    mat = np.array(
+        [[shrunk_values[pid][key] for key in PROGRESSION_RATING_METRIC_KEYS] for pid in pids],
+        dtype=float,
+    )
+    return mat, pids
+
+
+def _progression_composite_z(
+    metric_z: np.ndarray,
+    pool: list[dict],
+) -> np.ndarray:
+    pass_idx = [PROGRESSION_RATING_METRIC_KEYS.index(key) for key in PROGRESSION_PASS_RATING_KEYS]
+    carry_idx = [PROGRESSION_RATING_METRIC_KEYS.index(key) for key in PROGRESSION_CARRY_RATING_KEYS]
+    composite = np.zeros(len(pool), dtype=float)
+    for i, player in enumerate(pool):
+        pass_weight, carry_weight = _progression_block_weights(player.get("position_group"))
+        pass_z = float(metric_z[i, pass_idx].mean())
+        carry_z = float(metric_z[i, carry_idx].mean())
+        composite[i] = pass_weight * pass_z + carry_weight * carry_z
+    return composite
+
+
+def _progression_hybrid_rating_fields_for_pool(
+    pool: list[dict],
+    shrunk_values: dict[str, dict[str, float]],
+) -> dict[str, dict[str, object]]:
+    if not pool:
+        return {}
+
+    mat, pids = _progression_metric_matrix(pool, shrunk_values)
+    metric_z = pe._zscore_columns(mat)
+    composite_z = _progression_composite_z(metric_z, pool)
+    raw_displays = np.array([pe._tanh_display_score(z) for z in composite_z], dtype=float)
+    pareto_counts = pe._pareto_top_quartile_counts(metric_z)
+    archetype_dist = pe._archetype_distances(metric_z)
+    archetype_order = np.argsort(archetype_dist)
+    archetype_rank_by_pid = {
+        pids[idx]: int(rank)
+        for rank, idx in enumerate(archetype_order, start=1)
+    }
+
+    adjusted_displays: list[float] = []
+    fields_by_pid: dict[str, dict[str, object]] = {}
+    for i, player in enumerate(pool):
+        pid = pids[i]
+        confidence = pe._rating_confidence(player)
+        raw_display = float(raw_displays[i])
+        adjusted, uncertainty = pe._apply_rating_confidence(raw_display, confidence)
+        adjusted_displays.append(adjusted)
+        fields_by_pid[pid] = {
+            "rating_raw_display": round(raw_display, 2),
+            "rating_confidence": round(confidence, 4),
+            "rating_uncertainty": round(uncertainty, 2),
+            "rating_pareto_dims": int(pareto_counts[i]),
+            "rating_pareto_badge": int(pareto_counts[i]) >= pe.RATING_PARETO_MIN_DIMENSIONS,
+            "rating_archetype_rank": archetype_rank_by_pid[pid],
+            "rating_archetype_badge": archetype_rank_by_pid[pid] <= pe.RATING_ARCHETYPE_TOP_N,
+            "rating_composite_z": round(float(composite_z[i]), 4),
+        }
+
+    for i, pid in enumerate(pids):
+        percentile = pe._value_percentile_in_pool(adjusted_displays[i], adjusted_displays)
+        fields_by_pid[pid]["rating_percentile"] = round(percentile, 4)
+        fields_by_pid[pid]["pass_rating"] = round(adjusted_displays[i] / 10.0, 4)
+
+    return fields_by_pid
+
+
+def _progression_hybrid_rating_fields_for_player(
+    player: dict,
+    pool: list[dict],
+    shrunk_values: dict[str, dict[str, float]],
+) -> dict[str, object]:
+    if not pool:
+        confidence = pe._rating_confidence(player)
+        adjusted, uncertainty = pe._apply_rating_confidence(pe.RATING_DISPLAY_MID, confidence)
+        return {
+            "pass_rating": round(adjusted / 10.0, 4),
+            "rating_raw_display": pe.RATING_DISPLAY_MID,
+            "rating_percentile": 0.5,
+            "rating_confidence": round(confidence, 4),
+            "rating_uncertainty": round(uncertainty, 2),
+            "rating_pareto_dims": 0,
+            "rating_pareto_badge": False,
+            "rating_archetype_rank": None,
+            "rating_archetype_badge": False,
+            "rating_composite_z": 0.0,
+        }
+
+    mat, pids = _progression_metric_matrix(pool, shrunk_values)
+    mu = mat.mean(axis=0)
+    sd = mat.std(axis=0, ddof=0)
+    sd = np.where(sd <= 1e-12, 1.0, sd)
+
+    pid = str(player["player_id"])
+    player_row = np.array(
+        [shrunk_values[pid][key] for key in PROGRESSION_RATING_METRIC_KEYS],
+        dtype=float,
+    )
+    player_metric_z = pe._metric_z_vector(player_row, mu=mu, sd=sd)
+    composite_z = float(_progression_composite_z(player_metric_z.reshape(1, -1), [player])[0])
+    raw_display = pe._tanh_display_score(composite_z)
+
+    pool_metric_z = pe._zscore_columns(mat)
+    q75 = np.percentile(pool_metric_z, 75, axis=0)
+    pareto_dims = int((player_metric_z >= q75).sum())
+
+    combined_metric_z = np.vstack([pool_metric_z, player_metric_z.reshape(1, -1)])
+    combined_dist = pe._archetype_distances(combined_metric_z)
+    archetype_rank = int(1 + (combined_dist[:-1] < combined_dist[-1]).sum())
+
+    confidence = pe._rating_confidence(player)
+    adjusted, uncertainty = pe._apply_rating_confidence(raw_display, confidence)
+
+    pool_fields = _progression_hybrid_rating_fields_for_pool(pool, shrunk_values)
+    pool_adjusted = [
+        float(pool_fields[str(p["player_id"])]["pass_rating"]) * 10.0
+        for p in pool
+        if str(p["player_id"]) in pool_fields
+    ]
+    pool_adjusted.append(adjusted)
+    percentile = pe._value_percentile_in_pool(adjusted, pool_adjusted)
+
+    return {
+        "pass_rating": round(adjusted / 10.0, 4),
+        "rating_raw_display": round(raw_display, 2),
+        "rating_percentile": round(percentile, 4),
+        "rating_confidence": round(confidence, 4),
+        "rating_uncertainty": round(uncertainty, 2),
+        "rating_pareto_dims": pareto_dims,
+        "rating_pareto_badge": pareto_dims >= pe.RATING_PARETO_MIN_DIMENSIONS,
+        "rating_archetype_rank": archetype_rank,
+        "rating_archetype_badge": archetype_rank <= pe.RATING_ARCHETYPE_TOP_N,
+        "rating_composite_z": round(composite_z, 4),
+    }
+
+
 @contextlib.contextmanager
 def _progression_rating_context() -> Iterator[None]:
     saved = {
@@ -416,6 +576,8 @@ def _progression_rating_context() -> Iterator[None]:
         "_rating_confidence": pe._rating_confidence,
         "_position_confidence_thresholds": pe._position_confidence_thresholds,
         "_with_position_confidence_thresholds": pe._with_position_confidence_thresholds,
+        "_hybrid_rating_fields_for_pool": pe._hybrid_rating_fields_for_pool,
+        "_hybrid_rating_fields_for_player": pe._hybrid_rating_fields_for_player,
     }
     pe.RATING_DIMENSIONS = COMBINED_RATING_DIMENSIONS
     pe.RATING_METRIC_KEYS = COMBINED_RATING_METRIC_KEYS
@@ -425,6 +587,8 @@ def _progression_rating_context() -> Iterator[None]:
     pe._rating_confidence = _progression_rating_confidence
     pe._position_confidence_thresholds = _progression_position_confidence_thresholds
     pe._with_position_confidence_thresholds = _progression_with_position_confidence_thresholds
+    pe._hybrid_rating_fields_for_pool = _progression_hybrid_rating_fields_for_pool
+    pe._hybrid_rating_fields_for_player = _progression_hybrid_rating_fields_for_player
     try:
         yield
     finally:

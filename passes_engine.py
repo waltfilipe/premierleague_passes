@@ -57,7 +57,7 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 60
+DATA_CACHE_VERSION = 61
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
@@ -154,35 +154,23 @@ RANKING_METRIC_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     )),
 )
 
-RATING_DIMENSIONS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = (
-    (
-        "impact",
-        (
-            ("impact_passes_p90", RATING_VOLUME_WEIGHT),
-            ("impact_per_pass", RATING_EFFICIENCY_WEIGHT),
-        ),
-    ),
-    (
-        "risk",
-        (
-            ("risk_passes_p90", RATING_VOLUME_WEIGHT),
-            ("positive_dxt_pct", RATING_EFFICIENCY_WEIGHT),
-        ),
-    ),
-    (
-        "profile",
-        (
-            ("threat_pass_pct", 0.6),
-            ("construction_aip_p90", 0.4),
-        ),
-    ),
-    (
-        "decisive",
-        (
-            ("dxt_gt_01_pct", 0.6),
-            ("aggression_aip_p90", 0.4),
-        ),
-    ),
+def _equal_weight_rating_dimensions(
+    keys: tuple[str, ...],
+) -> tuple[tuple[str, tuple[tuple[str, float], ...]], ...]:
+    return tuple((key, ((key, 1.0),)) for key in keys)
+
+
+PASS_RATING_METRIC_KEYS: tuple[str, ...] = (
+    "impact_passes_p90",
+    "impact_per_pass",
+    "risk_pass_pct",
+    "positive_dxt_pct",
+    "construction_aip_p90",
+    "aggression_aip_p90",
+)
+
+RATING_DIMENSIONS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = _equal_weight_rating_dimensions(
+    PASS_RATING_METRIC_KEYS,
 )
 
 RATING_METRIC_KEYS: tuple[str, ...] = tuple(
