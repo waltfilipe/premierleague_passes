@@ -100,14 +100,20 @@ PLAYER_ANALYSIS_SELECT_KEY = "player_analysis_select"
 PLAYER_ANALYSIS_SHOW_MAPS_KEY = "pa_show_maps"
 PLAYER_ANALYSIS_SHOW_SIMILAR_KEY = "pa_show_similar"
 PLAYER_ANALYSIS_SIMILAR_PICK_KEY = "pa_similar_pick"
-PLAYER_ANALYSIS_POSITION_KEY = "pa_position_filter"
-PLAYER_ANALYSIS_POSITION_FILTERS: tuple[tuple[str, str], ...] = (
-    ("Zagueiros", "centerbacks"),
-    ("Laterais", "fullbacks"),
-    ("Meio Campistas", "midfielders"),
-    ("Extremos", "wingers"),
-    ("Atacantes", "strikers"),
+PLAYER_ANALYSIS_COMPARE_KEY = "pa_compare_select"
+PLAYER_ANALYSIS_POSITION_BLOCKS_KEY = "pa_position_blocks"
+PLAYER_ANALYSIS_POSITION_BLOCKS: tuple[tuple[str, str, frozenset[str]], ...] = (
+    ("cb", "Zagueiros", frozenset({"CB", "RCB", "LCB"})),
+    ("rb", "Laterais Direitos", frozenset({"RB", "RWB"})),
+    ("lb", "Laterais Esquerdos", frozenset({"LB", "LWB"})),
+    ("cm", "Meio Campistas", frozenset({"CM", "CDM", "DM", "RCM", "LCM", "RDM", "LDM", "CAM"})),
+    ("lw", "Extremos Esquerdos", frozenset({"LW", "LM", "LCF"})),
+    ("rw", "Extremos Direitos", frozenset({"RW", "RM", "RCF"})),
+    ("st", "Atacantes", frozenset({"ST", "CF", "SS"})),
 )
+PLAYER_POSITION_BLOCK_BY_ID: dict[str, tuple[str, frozenset[str]]] = {
+    block_id: (label, codes) for block_id, label, codes in PLAYER_ANALYSIS_POSITION_BLOCKS
+}
 FIXED_CLASSIFICATION_MODEL = CLASSIFICATION_MODEL_DEFAULT
 FIXED_TIER_MODEL = TIER_MODEL_DEFAULT
 FIXED_XT_SURFACE_MODE = XT_SURFACE_MODE_DEFAULT
@@ -506,6 +512,255 @@ def _pillar_radar_b64(
     fig.savefig(buf, format="png", dpi=200, transparent=True, bbox_inches="tight", pad_inches=0.06)
     plt.close(fig)
     return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _plot_player_radar_on_ax(
+    ax,
+    angles: list[float],
+    values: list[float],
+    carry_flags: list[bool],
+    *,
+    line_alpha: float,
+    fill_alpha: float,
+    fill_color: str,
+    pass_color: str,
+    carry_color: str,
+    draw_fill: bool = True,
+) -> None:
+    import numpy as np
+
+    count = len(values)
+    values_closed = values + [values[0]]
+    angles_closed = np.append(angles, angles[0])
+    if draw_fill:
+        ax.fill(angles_closed, values_closed, color=fill_color, alpha=fill_alpha, zorder=2)
+    for i in range(count):
+        j = (i + 1) % count
+        seg_color = carry_color if carry_flags[i] else pass_color
+        seg_style = (0, (5, 3)) if carry_flags[i] else "-"
+        ax.plot(
+            [angles[i], angles[j]],
+            [values[i], values[j]],
+            color=seg_color,
+            linewidth=2.2,
+            linestyle=seg_style,
+            alpha=line_alpha,
+            zorder=4,
+        )
+    for angle, value, is_carry in zip(angles, values, carry_flags):
+        marker_color = carry_color if is_carry else pass_color
+        ax.plot(
+            angle,
+            value,
+            marker="o",
+            color=marker_color,
+            markersize=5.0,
+            markeredgecolor="#0f172a",
+            markeredgewidth=0.6,
+            alpha=line_alpha,
+            zorder=5,
+        )
+
+
+def _pillar_radar_compare_b64(
+    primary: dict,
+    secondary: dict,
+    *,
+    metric_keys: tuple[str, ...] | None = None,
+    pillar_labels: dict[str, str] | None = None,
+    scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
+) -> str:
+    import base64
+    import io
+
+    import matplotlib
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    matplotlib.use("Agg")
+
+    resolved_metric_keys = metric_keys or PROGRESSION_RADAR_METRIC_KEYS
+    label_map = pillar_labels or _PROGRESSION_RADAR_METRIC_LABELS
+    primary_ranks = primary.get("metric_ranks") if isinstance(primary.get("metric_ranks"), dict) else {}
+    secondary_ranks = secondary.get("metric_ranks") if isinstance(secondary.get("metric_ranks"), dict) else {}
+
+    def _values_for(player_ranks: dict) -> tuple[list[str], list[float], list[bool]]:
+        keys_out, labels, values, carry_flags = _collect_radar_metric_points(
+            resolved_metric_keys,
+            player_ranks,
+            label_map,
+            scout_section_specs,
+        )
+        return labels, values, carry_flags
+
+    labels, primary_values, carry_flags = _values_for(primary_ranks)
+    _, secondary_values, _ = _values_for(secondary_ranks)
+    if len(primary_values) < 3 or len(secondary_values) < 3:
+        return ""
+
+    count = len(labels)
+    angles = np.linspace(0, 2 * np.pi, count, endpoint=False).tolist()
+    fig, ax = plt.subplots(figsize=(3.8, 3.8), subplot_kw={"polar": True}, facecolor="none")
+    fig.patch.set_alpha(0.0)
+    ax.set_facecolor("none")
+    ax.set_theta_offset(np.pi / 2)
+    ax.set_theta_direction(-1)
+
+    _plot_player_radar_on_ax(
+        ax,
+        angles,
+        primary_values,
+        carry_flags,
+        line_alpha=0.95,
+        fill_alpha=0.16,
+        fill_color="#60a5fa",
+        pass_color="#60a5fa",
+        carry_color="#34d399",
+        draw_fill=True,
+    )
+    _plot_player_radar_on_ax(
+        ax,
+        angles,
+        secondary_values,
+        carry_flags,
+        line_alpha=0.9,
+        fill_alpha=0.0,
+        fill_color="#f59e0b",
+        pass_color="#f59e0b",
+        carry_color="#fbbf24",
+        draw_fill=False,
+    )
+
+    ax.set_ylim(3.0, 9.0)
+    ax.set_yticks([4, 5, 6, 7, 8])
+    ax.set_yticklabels([])
+    label_font = 6.2 if count > 10 else 7.0
+    ax.set_xticks(angles)
+    ax.set_xticklabels(labels, fontsize=label_font, fontweight=600)
+    for tick_label, is_carry in zip(ax.get_xticklabels(), carry_flags):
+        tick_label.set_color(PA_RADAR_CARRY_COLOR if is_carry else PA_RADAR_PASS_COLOR)
+    ax.tick_params(axis="x", pad=7 if count > 10 else 8)
+    ax.grid(color="#334155", alpha=0.45, linewidth=0.6)
+    ax.spines["polar"].set_color("#334155")
+    ax.spines["polar"].set_alpha(0.55)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=200, transparent=True, bbox_inches="tight", pad_inches=0.06)
+    plt.close(fig)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _progression_compare_stats_html(
+    primary: dict,
+    secondary: dict,
+    *,
+    label_fn=pg_analyst_metric_label,
+    fmt_pct_fn=pg_fmt_pct,
+    fmt_stat_fn=pg_fmt_stat_value,
+) -> str:
+    primary_name = html.escape(str(primary.get("player_name", "Player A")))
+    secondary_name = html.escape(str(secondary.get("player_name", "Player B")))
+    primary_ranks = primary.get("metric_ranks") if isinstance(primary.get("metric_ranks"), dict) else {}
+    secondary_ranks = secondary.get("metric_ranks") if isinstance(secondary.get("metric_ranks"), dict) else {}
+    rows = [
+        '<div class="player-card">',
+        '<div class="cmp-row cmp-row-head">',
+        "<span>Métrica</span>",
+        f"<span>{primary_name}</span>",
+        f"<span>{secondary_name}</span>",
+        "</div>",
+    ]
+    for key in PROGRESSION_RADAR_METRIC_KEYS:
+        label = html.escape(label_fn(key))
+        p_val = html.escape(_stat_display(primary, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn))
+        s_val = html.escape(_stat_display(secondary, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn))
+        p_info = primary_ranks.get(key)
+        s_info = secondary_ranks.get(key)
+        p_rank = ""
+        s_rank = ""
+        if p_info:
+            p_rank = html.escape(pg_rank_in_group_label(int(p_info["rank"]), primary.get("position_group")))
+        if s_info:
+            s_rank = html.escape(pg_rank_in_group_label(int(s_info["rank"]), secondary.get("position_group")))
+        rows.extend([
+            '<div class="cmp-row">',
+            f'<span class="cmp-cell-label">{label}</span>',
+            f'<span><span class="cmp-cell-value">{p_val}</span>'
+            f'{"<span class=\"cmp-rank-note\">" + p_rank + "</span>" if p_rank else ""}</span>',
+            f'<span><span class="cmp-cell-value">{s_val}</span>'
+            f'{"<span class=\"cmp-rank-note\">" + s_rank + "</span>" if s_rank else ""}</span>',
+            "</div>",
+        ])
+    rows.append("</div>")
+    return "".join(rows)
+
+
+def _render_player_comparison_panel(
+    primary: dict,
+    *,
+    all_players: list[dict],
+    progression_by_id: dict[str, dict],
+    position_codes: frozenset[str],
+) -> None:
+    primary_id = str(primary.get("player_id"))
+    options = _player_analysis_options(
+        all_players,
+        progression_by_id,
+        position_codes=position_codes,
+        exclude_player_id=primary_id,
+    )
+    if not options:
+        st.info("Nenhum outro jogador disponível para comparação nas posições selecionadas.")
+        return
+
+    labels = [o[3] for o in options]
+    id_by_label = {o[3]: o[0] for o in options}
+    current_label = st.session_state.get(PLAYER_ANALYSIS_COMPARE_KEY)
+    if current_label and current_label not in labels:
+        st.session_state.pop(PLAYER_ANALYSIS_COMPARE_KEY, None)
+
+    compare_label = st.selectbox(
+        "Comparar com",
+        options=labels,
+        key=PLAYER_ANALYSIS_COMPARE_KEY,
+        placeholder="Selecione outro jogador",
+    )
+    if not compare_label:
+        st.info("Selecione um segundo jogador para comparar o pillar profile e as stats.")
+        return
+
+    compare_id = id_by_label[compare_label]
+    compare_player = progression_by_id.get(compare_id)
+    if compare_player is None:
+        st.warning("Não foi possível carregar o perfil do jogador selecionado.")
+        return
+
+    b64 = _pillar_radar_compare_b64(primary, compare_player, pillar_labels=_PROGRESSION_RADAR_METRIC_LABELS)
+    if b64:
+        legend = (
+            '<div class="pa-compare-legend">'
+            f'<span class="pa-compare-legend-primary">{html.escape(str(primary.get("player_name", "A")))}</span>'
+            f'<span class="pa-compare-legend-secondary">{html.escape(str(compare_player.get("player_name", "B")))}</span>'
+            "</div>"
+        )
+        radar = (
+            f'<div class="pa-compare-radar-wrap">'
+            f'<img class="rating-radar" src="data:image/png;base64,{b64}" alt="Pillar profile comparison">'
+            "</div>"
+        )
+        st.markdown(legend + radar, unsafe_allow_html=True)
+
+    st.html(
+        _progression_compare_stats_html(
+            primary,
+            compare_player,
+            label_fn=pg_analyst_metric_label,
+            fmt_pct_fn=pg_fmt_pct,
+            fmt_stat_fn=pg_fmt_stat_value,
+        ),
+        width="stretch",
+    )
 
 
 def _pillar_radar_inner_html(player: dict, **kwargs) -> str:
@@ -922,6 +1177,12 @@ st.markdown(
         border-bottom: 1px solid #2a3550;
     }
     .cmp-cell-label { color: #cbd5e1; font-size: 0.84rem; }
+    .cmp-rank-note {
+        display: block;
+        font-size: 0.68rem;
+        color: #94a3b8;
+        margin-top: 0.1rem;
+    }
     .cmp-cell-value {
         font-size: 1.05rem;
         font-weight: 700;
@@ -1402,6 +1663,62 @@ st.markdown(
     }
     section[data-testid="stSidebar"] { display: none; }
     .pa-shell { max-width: 1380px; margin: 0 auto 1.25rem auto; }
+    .pa-slicer-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1rem;
+        align-items: flex-start;
+        margin-bottom: 0.85rem;
+    }
+    .pa-position-blocks {
+        flex: 1 1 520px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+    .pa-position-block-label {
+        width: 100%;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #8fa3bf;
+        margin-bottom: 0.15rem;
+    }
+    .pa-player-slicer {
+        flex: 1 1 260px;
+        min-width: 220px;
+    }
+    .pa-compare-radar-wrap {
+        display: flex;
+        justify-content: center;
+        margin: 0.5rem 0 0.85rem;
+    }
+    .pa-compare-radar-wrap img {
+        width: 100%;
+        max-width: 420px;
+        height: auto;
+    }
+    .pa-compare-legend {
+        display: flex;
+        justify-content: center;
+        gap: 1rem;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: #94a3b8;
+        margin-bottom: 0.65rem;
+    }
+    .pa-compare-legend span::before {
+        content: "";
+        display: inline-block;
+        width: 0.55rem;
+        height: 0.55rem;
+        border-radius: 999px;
+        margin-right: 0.3rem;
+        vertical-align: middle;
+    }
+    .pa-compare-legend-primary::before { background: #60a5fa; }
+    .pa-compare-legend-secondary::before { background: #f59e0b; }
     .pa-stats-filter {
         display: grid;
         grid-template-columns: minmax(220px, 0.92fr) minmax(320px, 1.35fr) minmax(210px, 0.78fr);
@@ -2106,25 +2423,78 @@ def _player_options(rated: list[dict]) -> list[tuple[str, str, str, str]]:
     return [(pid, name, team, f"{name} ({team})") for pid, name, team in rows]
 
 
-def _player_analysis_position_group(position_label: str) -> str:
-    for label, group in PLAYER_ANALYSIS_POSITION_FILTERS:
-        if label == position_label:
-            return group
-    return PLAYER_ANALYSIS_POSITION_FILTERS[0][1]
+def _player_position_code(player: dict) -> str:
+    return str(player.get("position") or "").strip().upper()
+
+
+def _position_codes_from_blocks(block_ids: set[str]) -> frozenset[str]:
+    codes: set[str] = set()
+    for block_id in block_ids:
+        entry = PLAYER_POSITION_BLOCK_BY_ID.get(block_id)
+        if entry:
+            codes.update(entry[1])
+    return frozenset(codes)
+
+
+def _position_blocks_for_player(player: dict) -> set[str]:
+    pos = _player_position_code(player)
+    blocks = {
+        block_id
+        for block_id, _, codes in PLAYER_ANALYSIS_POSITION_BLOCKS
+        if pos in codes
+    }
+    if blocks:
+        return blocks
+    return {PLAYER_ANALYSIS_POSITION_BLOCKS[0][0]}
+
+
+def _render_position_block_slicer(*, key_prefix: str = "pa") -> frozenset[str]:
+    state_key = PLAYER_ANALYSIS_POSITION_BLOCKS_KEY
+    if state_key not in st.session_state:
+        st.session_state[state_key] = {block_id for block_id, _, _ in PLAYER_ANALYSIS_POSITION_BLOCKS}
+
+    selected: set[str] = set(st.session_state[state_key])
+    st.markdown('<p class="pa-position-block-label">Posição</p>', unsafe_allow_html=True)
+    block_cols = st.columns(len(PLAYER_ANALYSIS_POSITION_BLOCKS))
+    for col, (block_id, label, _codes) in zip(block_cols, PLAYER_ANALYSIS_POSITION_BLOCKS):
+        with col:
+            is_selected = block_id in selected
+            if st.button(
+                label,
+                key=f"{key_prefix}_pos_block_{block_id}",
+                type="primary" if is_selected else "secondary",
+                use_container_width=True,
+            ):
+                if is_selected and len(selected) > 1:
+                    selected.discard(block_id)
+                elif not is_selected:
+                    selected.add(block_id)
+                st.session_state[state_key] = selected
+                st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
+                st.session_state.pop(PLAYER_ANALYSIS_COMPARE_KEY, None)
+                st.rerun()
+
+    if not selected:
+        selected = {PLAYER_ANALYSIS_POSITION_BLOCKS[0][0]}
+        st.session_state[state_key] = selected
+    return _position_codes_from_blocks(selected)
 
 
 def _player_analysis_options(
     players: list[dict],
     progression_by_id: dict[str, dict],
     *,
-    position_group: str,
+    position_codes: frozenset[str],
+    exclude_player_id: str | None = None,
 ) -> list[tuple[str, str, str, str]]:
-    """Player slicer options ranked by overall (progression) rating within a position group."""
+    """Player slicer options ranked by overall rating within selected position blocks."""
     ranked_rows: list[tuple[str, str, str, float]] = []
     for player in players:
-        if str(player.get("position_group") or "") != position_group:
-            continue
         pid = str(player["player_id"])
+        if exclude_player_id and pid == str(exclude_player_id):
+            continue
+        if _player_position_code(player) not in position_codes:
+            continue
         prog = progression_by_id.get(pid, {})
         rating = prog.get("progression_rating")
         if rating is None:
@@ -2146,6 +2516,74 @@ def _player_analysis_options(
         )
         for idx, (pid, name, team, rating) in enumerate(ranked_rows, start=1)
     ]
+
+
+def _render_shared_player_slicers(
+    all_players: list[dict],
+    progression_by_id: dict[str, dict],
+    players_by_id: dict[str, dict],
+    *,
+    key_prefix: str = "pa",
+) -> str | None:
+    """Position block slicer + player selectbox. Returns selected player_id or None."""
+    _sync_player_analysis_selection(players_by_id, {})
+
+    pos_col, player_col = st.columns([2.1, 1], gap="medium")
+    with pos_col:
+        st.markdown('<div class="pa-position-blocks">', unsafe_allow_html=True)
+        position_codes = _render_position_block_slicer(key_prefix=key_prefix)
+        st.markdown("</div>", unsafe_allow_html=True)
+    with player_col:
+        st.markdown('<div class="pa-player-slicer">', unsafe_allow_html=True)
+        options = _player_analysis_options(
+            all_players,
+            progression_by_id,
+            position_codes=position_codes,
+        )
+        if not options:
+            st.info("Nenhum jogador disponível para as posições selecionadas.")
+            st.markdown("</div>", unsafe_allow_html=True)
+            return None
+
+        labels = [o[3] for o in options]
+        id_by_label = {o[3]: o[0] for o in options}
+        label_by_id = {o[0]: o[3] for o in options}
+
+        _sync_player_analysis_selection(players_by_id, label_by_id)
+
+        current_label = st.session_state.get(PLAYER_ANALYSIS_SELECT_KEY)
+        if current_label and current_label not in labels:
+            st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
+
+        selected_label = st.selectbox(
+            "Jogador",
+            options=labels,
+            key=PLAYER_ANALYSIS_SELECT_KEY,
+            placeholder="Selecione um jogador",
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    if not selected_label:
+        st.info("Selecione um jogador para continuar.")
+        return None
+
+    player_id = id_by_label[selected_label]
+    prev_id = st.session_state.get("map_player_id")
+    st.session_state["map_player_id"] = player_id
+    if prev_id != player_id:
+        st.session_state["pa_last_player_id"] = player_id
+        st.session_state.pop(PLAYER_ANALYSIS_SIMILAR_PICK_KEY, None)
+        st.session_state.pop(PLAYER_ANALYSIS_COMPARE_KEY, None)
+        if st.query_params.get("similar_idx") is None and st.query_params.get("pa_similar") != "1":
+            st.session_state.pop(PLAYER_ANALYSIS_SHOW_SIMILAR_KEY, None)
+        url_pick = st.query_params.get("player_id")
+        if url_pick and str(url_pick) != str(player_id):
+            try:
+                del st.query_params["player_id"]
+            except Exception:
+                pass
+            st.session_state.pop("_pa_url_player_id", None)
+    return player_id
 
 
 def _sync_player_selection(
@@ -3312,7 +3750,7 @@ def render_dashboard_player_picker(
     all_players: list[dict],
     players_by_id: dict[str, dict],
 ) -> str | None:
-    st.caption("Select below or click a player in the Ranking tab.")
+    st.caption("Selecione um jogador nas abas Maps ou Player Analysis.")
 
     options = _player_options(all_players)
     if not options:
@@ -3333,7 +3771,7 @@ def render_dashboard_player_picker(
     )
 
     if not selected_label:
-        st.info("Select a player from the list or the Ranking tab.")
+        st.info("Selecione um jogador nas abas Maps ou Player Analysis.")
         return None
 
     player_id = id_by_label[selected_label]
@@ -3685,17 +4123,13 @@ def _sync_player_analysis_selection(
     players_by_id: dict[str, dict],
     label_by_id: dict[str, str],
 ) -> None:
-    """Sync slicer from Ranking URL picks only — never override a manual selection."""
+    """Sync slicer from URL picks only — never override a manual selection."""
     qp = st.query_params.get("player_id")
     qp_id = str(qp) if qp else None
     if qp_id and qp_id in players_by_id:
         player = players_by_id[qp_id]
-        group = str(player.get("position_group") or "")
-        for label, grp in PLAYER_ANALYSIS_POSITION_FILTERS:
-            if grp == group:
-                if st.session_state.get("_pa_url_player_id") != qp_id:
-                    st.session_state[PLAYER_ANALYSIS_POSITION_KEY] = label
-                break
+        if st.session_state.get("_pa_url_player_id") != qp_id:
+            st.session_state[PLAYER_ANALYSIS_POSITION_BLOCKS_KEY] = _position_blocks_for_player(player)
         if st.session_state.get("_pa_url_player_id") != qp_id:
             st.session_state["_pa_url_player_id"] = qp_id
             st.session_state["map_player_id"] = qp_id
@@ -3839,6 +4273,66 @@ def _render_player_analysis_similarity(
         st.write(", ".join(pge.METRIC_LABELS.get(k, k) for k in sim.SIMILARITY_TRADITIONAL_METRICS))
 
 
+def render_maps_section(
+    all_players: list[dict],
+    passes_by_player: dict,
+    carries_by_player: dict,
+    progression_by_id: dict[str, dict],
+    pass_by_id: dict[str, dict],
+    carry_by_id: dict[str, dict],
+    progression_pool_by_position: dict[str, list[dict]],
+    pass_pool_by_position: dict[str, list[dict]],
+    carry_pool_by_position: dict[str, list[dict]],
+) -> None:
+    st.subheader("Maps")
+
+    if not all_players:
+        st.info("No players available.")
+        return
+
+    players_by_id = {str(p["player_id"]): p for p in all_players}
+    player_id = _render_shared_player_slicers(
+        all_players,
+        progression_by_id,
+        players_by_id,
+        key_prefix="maps",
+    )
+    if not player_id:
+        return
+
+    player = _resolve_progression_analysis_player(
+        player_id,
+        progression_by_id,
+        pass_by_id,
+        carry_by_id,
+        progression_pool_by_position,
+        pass_pool_by_position,
+        carry_pool_by_position,
+    )
+    if player is None:
+        st.warning("Could not build a profile for this player.")
+        return
+
+    passes_df = passes_by_player.get(player_id)
+    carries_df = carries_by_player.get(player_id)
+    has_actions = (
+        (passes_df is not None and not passes_df.empty)
+        or (carries_df is not None and not carries_df.empty)
+    )
+    if has_actions:
+        fig_origin = draw_action_origin_smooth_heatmap(
+            passes_df,
+            carries_df,
+            str(player.get("player_name", "")),
+            profile=False,
+        )
+        st.pyplot(fig_origin, clear_figure=True, use_container_width=True)
+    else:
+        st.info("Sem ações com coordenadas para este jogador.")
+
+    render_progression_maps_only(player, passes_df, carries_df)
+
+
 def render_player_analysis_section(
     all_players: list[dict],
     carries_players: list[dict],
@@ -3858,69 +4352,18 @@ def render_player_analysis_section(
         return
 
     players_by_id = {str(p["player_id"]): p for p in all_players}
-
-    _sync_player_analysis_selection(players_by_id, {})
-
-    position_labels = [label for label, _ in PLAYER_ANALYSIS_POSITION_FILTERS]
-    if PLAYER_ANALYSIS_POSITION_KEY not in st.session_state:
-        st.session_state[PLAYER_ANALYSIS_POSITION_KEY] = position_labels[0]
-
-    selected_position_label = st.selectbox(
-        "Posição",
-        options=position_labels,
-        key=PLAYER_ANALYSIS_POSITION_KEY,
-    )
-    position_group = _player_analysis_position_group(selected_position_label)
-    prev_position_group = st.session_state.get("pa_last_position_group")
-    if prev_position_group != position_group:
-        st.session_state["pa_last_position_group"] = position_group
-        st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
-
-    options = _player_analysis_options(
+    player_id = _render_shared_player_slicers(
         all_players,
         progression_by_id,
-        position_group=position_group,
+        players_by_id,
+        key_prefix="pa",
     )
-    if not options:
-        st.info(f"No players available for {selected_position_label}.")
+    if not player_id:
         return
 
-    labels = [o[3] for o in options]
-    id_by_label = {o[3]: o[0] for o in options}
-    label_by_id = {o[0]: o[3] for o in options}
-
-    current_label = st.session_state.get(PLAYER_ANALYSIS_SELECT_KEY)
-    if current_label and current_label not in labels:
-        st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
-
-    _sync_player_analysis_selection(players_by_id, label_by_id)
-
-    selected_label = st.selectbox(
-        "Player",
-        options=labels,
-        key=PLAYER_ANALYSIS_SELECT_KEY,
-        placeholder="Select a player",
+    position_codes = _position_codes_from_blocks(
+        st.session_state.get(PLAYER_ANALYSIS_POSITION_BLOCKS_KEY, set())
     )
-    if not selected_label:
-        st.info("Select a player to open the analysis profile.")
-        return
-
-    player_id = id_by_label[selected_label]
-    prev_id = st.session_state.get("map_player_id")
-    st.session_state["map_player_id"] = player_id
-    if prev_id != player_id:
-        st.session_state["pa_last_player_id"] = player_id
-        st.session_state.pop(PLAYER_ANALYSIS_SIMILAR_PICK_KEY, None)
-        st.session_state.pop(PLAYER_ANALYSIS_SHOW_MAPS_KEY, None)
-        if st.query_params.get("similar_idx") is None and st.query_params.get("pa_similar") != "1":
-            st.session_state.pop(PLAYER_ANALYSIS_SHOW_SIMILAR_KEY, None)
-        url_pick = st.query_params.get("player_id")
-        if url_pick and str(url_pick) != str(player_id):
-            try:
-                del st.query_params["player_id"]
-            except Exception:
-                pass
-            st.session_state.pop("_pa_url_player_id", None)
 
     player = _resolve_progression_analysis_player(
         player_id,
@@ -3972,28 +4415,23 @@ def render_player_analysis_section(
     if st.query_params.get("similar_idx") is not None or st.query_params.get("pa_similar") == "1":
         st.session_state[PLAYER_ANALYSIS_SHOW_SIMILAR_KEY] = True
 
-    similar_expanded = bool(st.session_state.get(PLAYER_ANALYSIS_SHOW_SIMILAR_KEY, False))
-
-    st.markdown('<div class="pa-panels-row">', unsafe_allow_html=True)
-    maps_col, similar_col = st.columns(2, gap="medium")
-    with maps_col:
-        with st.expander("Progression maps"):
-            render_progression_maps_only(
-                player,
-                passes_by_player.get(player_id),
-                carries_by_player.get(player_id),
-            )
-    with similar_col:
-        with st.expander("Serie A comparables", expanded=similar_expanded):
-            _render_player_analysis_similarity(
-                player_id,
-                passes_by_player=passes_by_player,
-                carries_by_player=carries_by_player,
-                carries_players_sb=carries_players,
-                all_players=all_players,
-                pick_key=PLAYER_ANALYSIS_SIMILAR_PICK_KEY,
-            )
-    st.markdown("</div>", unsafe_allow_html=True)
+    similar_tab, compare_tab = st.tabs(["Similar - Série A", "Comparação"])
+    with similar_tab:
+        _render_player_analysis_similarity(
+            player_id,
+            passes_by_player=passes_by_player,
+            carries_by_player=carries_by_player,
+            carries_players_sb=carries_players,
+            all_players=all_players,
+            pick_key=PLAYER_ANALYSIS_SIMILAR_PICK_KEY,
+        )
+    with compare_tab:
+        _render_player_comparison_panel(
+            player,
+            all_players=all_players,
+            progression_by_id=progression_by_id,
+            position_codes=position_codes,
+        )
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -4232,14 +4670,14 @@ def _render_presentation_blur_demo(player: dict, passes) -> None:
 
 PRES_FEATURE_SPECS: tuple[tuple[str, str, str], ...] = (
     (
-        "ranking",
-        "Ranking",
-        "Tables by position group — click a player to open Player Analysis.",
+        "maps",
+        "Maps",
+        "SofaScore-style origin heatmap and full progression action maps.",
     ),
     (
         "player_analysis",
         "Player Analysis",
-        "Focused player profile with optional progression maps and Serie A comparables.",
+        "Focused player profile with Similar - Série A and head-to-head comparison.",
     ),
 )
 
@@ -4275,7 +4713,7 @@ def _player_analysis_mock_inner_html() -> str:
         '<div class="pres-sim-mock">'
         '<div class="pres-sim-mock-head">Player Analysis</div>'
         '<div class="pres-sim-mock-field">Premier League player · rating profile</div>'
-        '<div class="pres-sim-mock-field" style="margin-top:0.45rem">Optional: progression maps · Serie A comparables</div>'
+        '<div class="pres-sim-mock-field" style="margin-top:0.45rem">Maps tab · Similar - Série A · Comparação</div>'
         '<table class="pres-sim-mock-table"><thead><tr>'
         "<th>#</th><th>Player</th><th>League</th><th>Sim.</th><th>Origin</th>"
         f"</tr></thead><tbody>{table_rows}</tbody></table>"
@@ -4291,7 +4729,8 @@ def _render_presentation_player_analysis_demo() -> None:
         '<div class="pres-blur-caption">'
         "<strong>Player Analysis</strong>"
         "<p>Start with a clean rating profile for any Premier League player. "
-        "Reveal <strong>progression maps</strong> or <strong>Serie A comparables</strong> only when you need them.</p>"
+        "Use the <strong>Maps</strong> tab for full action maps and "
+        "<strong>Similar - Série A</strong> / <strong>Comparação</strong> under Player Analysis.</p>"
         "<p style='margin-top:0.45rem'>Comparables are ranked by pass+carry metrics at the same position group. "
         "Click a row to compare percentiles and origin profiles side by side.</p>"
         "</div></div></div>"
@@ -4299,20 +4738,18 @@ def _render_presentation_player_analysis_demo() -> None:
     st.html(demo_html, width="stretch")
 
 
-def _render_presentation_ranking_demo(groups: list[tuple[str, list[dict]]]) -> None:
-    if not groups:
-        st.info("No ranking data available for preview.")
-        return
-    demo_groups = groups[:3]
-    inner = _ranking_grid_html(demo_groups)
+def _render_presentation_maps_demo() -> None:
     demo_html = (
         '<div class="pres-blur-panel pres-blur-panel-wide">'
-        f'<div class="pres-blur-back">{inner}</div>'
+        '<div class="pres-blur-back">'
+        '<div class="pres-sim-mock-head">Maps</div>'
+        '<div class="pres-sim-mock-field">SofaScore-style origin heatmap</div>'
+        '<div class="pres-sim-mock-field">All actions · threat actions · heatmaps</div>'
+        "</div>"
         '<div class="pres-blur-overlay pres-blur-overlay-side">'
         '<div class="pres-blur-caption">'
-        "<strong>Ranking by group</strong>"
-        "<p>Tables by position with rating (1st = 9.0 · median = 6.0). "
-        "Click a player to open Player Analysis.</p>"
+        "<strong>Maps</strong>"
+        "<p>Filter by position blocks, pick a player, and open the origin heatmap plus all progression maps.</p>"
         "</div></div></div>"
     )
     st.html(demo_html, width="stretch")
@@ -4321,8 +4758,8 @@ def _render_presentation_ranking_demo(groups: list[tuple[str, list[dict]]]) -> N
 def _render_pres_flow_steps() -> None:
     steps = [
         ("Overview", "Understand the layout and browse previews."),
-        ("Ranking", "Explore rankings by group and open players in Player Analysis."),
-        ("Player Analysis", "Deep-dive on a player with optional maps and Serie A comparables."),
+        ("Maps", "Open SofaScore-style origin heatmaps and full progression maps."),
+        ("Player Analysis", "Deep-dive on a player with Similar - Série A and head-to-head comparison."),
     ]
     items = []
     for idx, (title, text) in enumerate(steps, start=1):
@@ -4361,8 +4798,8 @@ def render_presentation_tab(
     active_demo = st.session_state.get(PRES_DEMO_KEY)
     if active_demo:
         st.markdown('<div class="pres-demo-wrap">', unsafe_allow_html=True)
-        if active_demo == "ranking":
-            _render_presentation_ranking_demo(_rating_groups_from_rated(rated))
+        if active_demo == "maps":
+            _render_presentation_maps_demo()
         elif active_demo == "player_analysis":
             _render_presentation_player_analysis_demo()
         st.markdown("</div>", unsafe_allow_html=True)
@@ -4766,19 +5203,24 @@ def main() -> None:
 
     selected_player_id = st.session_state.get("map_player_id")
 
-    tab_pres, tab_ranking, tab_analysis = st.tabs(
-        ["Overview", "Ranking", "Player Analysis"]
+    tab_pres, tab_maps, tab_analysis = st.tabs(
+        ["Overview", "Maps", "Player Analysis"]
     )
     with tab_pres:
         render_presentation_tab(
             all_players, passes_by_player, players_by_id, pool_by_position, rated=rated,
         )
-    with tab_ranking:
-        render_combined_rating_section(
-            progression_rated,
-            rated,
-            carry_rated,
-            selected_player_id=selected_player_id,
+    with tab_maps:
+        render_maps_section(
+            all_players,
+            passes_by_player,
+            carries_by_player,
+            progression_by_id,
+            players_by_id,
+            carries_by_id,
+            progression_pool_by_position,
+            pool_by_position,
+            carries_pool_by_position,
         )
     with tab_analysis:
         render_player_analysis_section(
