@@ -86,6 +86,8 @@ from progression_maps import (
 
 DATA_CACHE_VERSION = pe.DATA_CACHE_VERSION
 LONG_BALL_STAT_KEYS = pe.LONG_BALL_STAT_KEYS
+DISTANCE_METRIC_KEYS = pe.DISTANCE_METRIC_KEYS
+RISK_PASS_METRIC_KEYS = pe.RISK_PASS_METRIC_KEYS
 ABSOLUTE_METRIC_KEYS = pe.ABSOLUTE_METRIC_KEYS
 RELATIVE_METRIC_KEYS = pe.RELATIVE_METRIC_KEYS
 PASS_TYPES_METRIC_KEYS = pe.PASS_TYPES_METRIC_KEYS
@@ -318,7 +320,8 @@ def _rating_badges_html(player: dict) -> str:
 _PILLAR_RADAR_LABELS: dict[str, str] = {
     "metrics_absolute": "P90",
     "metrics_relative": "Eff",
-    "long_balls": "Vrt",
+    "distance": "Dist",
+    "risk_pass": "Risk",
     "pass_types": "Typ",
 }
 _CARRIES_PILLAR_RADAR_LABELS: dict[str, str] = {
@@ -329,12 +332,14 @@ _CARRIES_PILLAR_RADAR_LABELS: dict[str, str] = {
 _PROGRESSION_PILLAR_RADAR_LABELS: dict[str, str] = {
     "pass_metrics_absolute": "P-P90",
     "pass_metrics_relative": "P-Eff",
+    "pass_distance": "P-Dist",
+    "pass_risk_pass": "P-Risk",
     "pass_pass_types": "P-Typ",
     "carry_metrics_absolute": "C-Vol",
     "carry_metrics_relative": "C-Eff",
     "carry_general_carries_dribbles": "C-FT",
 }
-PA_RADAR_EXCLUDED_SECTIONS: frozenset[str] = frozenset({"pass_long_balls"})
+PA_RADAR_EXCLUDED_SECTIONS: frozenset[str] = frozenset()
 PA_RADAR_PASS_COLOR = "#60a5fa"
 PA_RADAR_CARRY_COLOR = "#34d399"
 PA_RADAR_FILL_NEUTRAL = "#c4b5fd"

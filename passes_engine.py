@@ -57,7 +57,7 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 54
+DATA_CACHE_VERSION = 55
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
@@ -93,6 +93,8 @@ GOAL_X, GOAL_Y = 120.0, 40.0
 WYSCOUT_PITCH_SIZE = 100.0
 PASS_AGGRESSION_X_MIN = FIELD_X - 30.0
 LONG_PASS_MIN_DISTANCE_M = 30.0
+DISTANCE_SHORT_MAX_M = 12.0
+DISTANCE_MEDIUM_MAX_M = 25.0
 KICKOFF_RESTART_RADIUS_M = 4.0
 CORNER_CROSS_RADIUS_M = 10.0
 CORNER_PASS_RADIUS_M = 6.0
@@ -219,6 +221,9 @@ ANALYST_METRIC_LABELS: dict[str, str] = {
     "risk_passes_p90": "Risk Pass",
     "positive_dxt_pct": "% Passes with Positive ΔxT (+0.5)",
     "dxt_gt_01_pct": "% High Threat Passes",
+    "dist_short_impact_p90": "< 12 m",
+    "dist_medium_impact_p90": "12–25 m",
+    "dist_long_impact_p90": "≥ 25 m",
     "long_impact_passes": "Impact Long Balls",
     "long_impact_per_long_pass": "Average Impact",
     "construction_aip_p90": "Build-Up Impact Passes (Per game)",
@@ -239,6 +244,9 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "risk_passes_p90": "Passes with ΔxT ≥ 0.5 per 90 minutes.",
     "positive_dxt_pct": "Share of passes with ΔxT above +0.5.",
     "dxt_gt_01_pct": "Share of passes with ΔxT above 0.15 (high threat passes).",
+    "dist_short_impact_p90": "Threat passes per 90 on completed passes under 12 m.",
+    "dist_medium_impact_p90": "Threat passes per 90 on completed passes from 12 m to under 25 m.",
+    "dist_long_impact_p90": "Threat passes per 90 on completed passes of 25 m or more.",
     "long_impact_passes": "Long balls that generated threat in the xT model.",
     "long_impact_per_long_pass": "Average ΔxT generated per successful impact long ball.",
     "construction_aip_p90": "Build-up impact passes per 90 minutes.",
@@ -260,9 +268,18 @@ ABSOLUTE_METRIC_KEYS: tuple[str, ...] = (
 RELATIVE_METRIC_KEYS: tuple[str, ...] = (
     "impact_per_pass",
     "phi_per_pass",
-    "risk_passes_p90",
     "positive_dxt_pct",
     "dxt_gt_01_pct",
+)
+
+RISK_PASS_METRIC_KEYS: tuple[str, ...] = (
+    "risk_passes_p90",
+)
+
+DISTANCE_METRIC_KEYS: tuple[str, ...] = (
+    "dist_short_impact_p90",
+    "dist_medium_impact_p90",
+    "dist_long_impact_p90",
 )
 
 PASS_TYPES_METRIC_KEYS: tuple[str, ...] = (
@@ -278,7 +295,8 @@ LONG_BALL_STAT_KEYS: tuple[str, ...] = (
 SECTION_RATING_GROUPS: dict[str, tuple[str, ...]] = {
     "metrics_absolute": ABSOLUTE_METRIC_KEYS,
     "metrics_relative": RELATIVE_METRIC_KEYS,
-    "long_balls": LONG_BALL_STAT_KEYS,
+    "distance": DISTANCE_METRIC_KEYS,
+    "risk_pass": RISK_PASS_METRIC_KEYS,
     "pass_types": PASS_TYPES_METRIC_KEYS,
 }
 
@@ -296,10 +314,16 @@ SCOUT_SECTION_SPECS: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
         RELATIVE_METRIC_KEYS,
     ),
     (
-        "long_balls",
-        "Long Balls",
+        "distance",
+        "Distance",
         "",
-        LONG_BALL_STAT_KEYS,
+        DISTANCE_METRIC_KEYS,
+    ),
+    (
+        "risk_pass",
+        "Risk Pass",
+        "",
+        RISK_PASS_METRIC_KEYS,
     ),
     (
         "pass_types",
@@ -314,7 +338,7 @@ RANK_DISPLAY_KEYS: tuple[str, ...] = tuple(
         (
             *TOOLTIP_EXTRA_KEYS,
             "minutes_pct",
-            *LONG_BALL_STAT_KEYS,
+            *DISTANCE_METRIC_KEYS,
             *RATING_METRIC_KEYS,
             *PASS_TYPES_METRIC_KEYS,
         )
@@ -330,6 +354,9 @@ TOOLTIP_LABELS: dict[str, str] = {
     "high_impact_passes": "High Threat Passes",
     "long_impact_passes": "Impact Long Balls",
     "long_impact_per_long_pass": "Average Impact",
+    "dist_short_impact_p90": "< 12 m",
+    "dist_medium_impact_p90": "12–25 m",
+    "dist_long_impact_p90": "≥ 25 m",
 }
 
 
@@ -1148,6 +1175,9 @@ def _derive_rates(stats: dict, minutes: float | None) -> dict:
     out["impact_passes_p90"] = _per90(stats.get("impact_passes", 0), minutes)
     out["phi_p90"] = _per90(stats.get("high_impact_passes", 0), minutes)
     out["risk_passes_p90"] = _per90(stats.get("risk_passes", 0), minutes)
+    out["dist_short_impact_p90"] = _per90(stats.get("dist_short_impact", 0), minutes)
+    out["dist_medium_impact_p90"] = _per90(stats.get("dist_medium_impact", 0), minutes)
+    out["dist_long_impact_p90"] = _per90(stats.get("dist_long_impact", 0), minutes)
     out["dxt_p90"] = _per90(stats.get("sum_dxt_passes", 0), minutes)
     out["aggression_aip_p90"] = _per90(stats.get("aggression_aip", 0), minutes)
     out["construction_aip_p90"] = _per90(stats.get("construction_aip", 0), minutes)
@@ -1166,6 +1196,33 @@ def _long_pass_mask(passes: pd.DataFrame) -> pd.Series:
         + (passes["y_end"].to_numpy(dtype=float) - passes["y_start"].to_numpy(dtype=float)) ** 2
     )
     return has_end & (dist >= LONG_PASS_MIN_DISTANCE_M)
+
+
+def _distance_band_mask(passes: pd.DataFrame, band: str) -> pd.Series:
+    if passes.empty:
+        return pd.Series(dtype=bool)
+    has_end = passes["has_end"].fillna(False).astype(bool)
+    dist = passes["pass_distance"].to_numpy(dtype=float)
+    if band == "short":
+        return has_end & (dist < DISTANCE_SHORT_MAX_M)
+    if band == "medium":
+        return has_end & (dist >= DISTANCE_SHORT_MAX_M) & (dist < DISTANCE_MEDIUM_MAX_M)
+    if band == "long":
+        return has_end & (dist >= DISTANCE_MEDIUM_MAX_M)
+    return pd.Series(False, index=passes.index)
+
+
+def _distance_band_stats(passes: pd.DataFrame) -> dict:
+    out: dict[str, int] = {}
+    for band, prefix in (
+        ("short", "dist_short"),
+        ("medium", "dist_medium"),
+        ("long", "dist_long"),
+    ):
+        mask = _distance_band_mask(passes, band)
+        sub = passes[mask]
+        out[f"{prefix}_impact"] = int(sub["impact_success"].sum()) if not sub.empty else 0
+    return out
 
 
 def _long_ball_stats(passes: pd.DataFrame) -> dict:
@@ -1199,7 +1256,7 @@ def compute_player_metrics(passes: pd.DataFrame, minutes_info: dict) -> dict:
     live_passes = filter_live_ball_passes(passes)
     if live_passes is None or live_passes.empty:
         live_passes = passes.iloc[0:0]
-    stats = {**_pass_layer_metrics(live_passes), **_long_ball_stats(live_passes)}
+    stats = {**_pass_layer_metrics(live_passes), **_long_ball_stats(live_passes), **_distance_band_stats(live_passes)}
     passes_total = stats.get("passes_total") or 0
     passes_completed = stats.get("passes_completed") or 0
     stats["pass_completion_pct"] = (
@@ -2244,6 +2301,9 @@ def fmt_stat_value(key: str, value) -> str:
         "positive_dxt_pct": 1,
         "long_impact_per_long_pass": 3,
         "risk_passes_p90": 2,
+        "dist_short_impact_p90": 2,
+        "dist_medium_impact_p90": 2,
+        "dist_long_impact_p90": 2,
     }
     if key in fixed_decimals:
         return f"{float(value):.{fixed_decimals[key]}f}"
