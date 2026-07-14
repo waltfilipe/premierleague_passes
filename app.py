@@ -2471,6 +2471,7 @@ def _render_position_block_slicer(*, key_prefix: str = "pa") -> frozenset[str]:
                     selected.add(block_id)
                 st.session_state[state_key] = selected
                 st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
+                _clear_player_select_widgets()
                 st.session_state.pop(PLAYER_ANALYSIS_COMPARE_KEY, None)
                 st.rerun()
 
@@ -2478,6 +2479,30 @@ def _render_position_block_slicer(*, key_prefix: str = "pa") -> frozenset[str]:
         selected = {PLAYER_ANALYSIS_POSITION_BLOCKS[0][0]}
         st.session_state[state_key] = selected
     return _position_codes_from_blocks(selected)
+
+
+def _player_select_widget_key(key_prefix: str) -> str:
+    return f"{key_prefix}_{PLAYER_ANALYSIS_SELECT_KEY}"
+
+
+def _sync_player_select_from_map_id(
+    label_by_id: dict[str, str],
+    labels: list[str],
+    *,
+    key_prefix: str,
+) -> None:
+    select_key = _player_select_widget_key(key_prefix)
+    map_id = st.session_state.get("map_player_id")
+    if map_id and str(map_id) in label_by_id:
+        mapped_label = label_by_id[str(map_id)]
+        if mapped_label in labels:
+            st.session_state[select_key] = mapped_label
+
+
+def _clear_player_select_widgets() -> None:
+    for key in list(st.session_state.keys()):
+        if key == PLAYER_ANALYSIS_SELECT_KEY or key.endswith(f"_{PLAYER_ANALYSIS_SELECT_KEY}"):
+            st.session_state.pop(key, None)
 
 
 def _player_analysis_options(
@@ -2551,14 +2576,16 @@ def _render_shared_player_slicers(
 
         _sync_player_analysis_selection(players_by_id, label_by_id)
 
-        current_label = st.session_state.get(PLAYER_ANALYSIS_SELECT_KEY)
+        select_key = _player_select_widget_key(key_prefix)
+        current_label = st.session_state.get(select_key)
         if current_label and current_label not in labels:
-            st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
+            st.session_state.pop(select_key, None)
+        _sync_player_select_from_map_id(label_by_id, labels, key_prefix=key_prefix)
 
         selected_label = st.selectbox(
             "Jogador",
             options=labels,
-            key=PLAYER_ANALYSIS_SELECT_KEY,
+            key=select_key,
             placeholder="Selecione um jogador",
         )
         st.markdown("</div>", unsafe_allow_html=True)
@@ -4134,7 +4161,10 @@ def _sync_player_analysis_selection(
             st.session_state["_pa_url_player_id"] = qp_id
             st.session_state["map_player_id"] = qp_id
             if qp_id in label_by_id:
-                st.session_state[PLAYER_ANALYSIS_SELECT_KEY] = label_by_id[qp_id]
+                label = label_by_id[qp_id]
+                st.session_state[PLAYER_ANALYSIS_SELECT_KEY] = label
+                st.session_state[_player_select_widget_key("pa")] = label
+                st.session_state[_player_select_widget_key("maps")] = label
     elif qp_id is None:
         st.session_state.pop("_pa_url_player_id", None)
 
