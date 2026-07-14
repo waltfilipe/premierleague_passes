@@ -408,6 +408,8 @@ def _pillar_radar_b64(
     labels: list[str] = []
     values: list[float] = []
     axis_keys: list[str] = []
+    pass_indices: list[int] = []
+    carry_indices: list[int] = []
     for key in resolved_metric_keys:
         info = metric_ranks.get(key)
         if not info:
@@ -416,16 +418,19 @@ def _pillar_radar_b64(
         total = int(info.get("total") or 0)
         if rank <= 0 or total <= 0:
             continue
+        idx = len(axis_keys)
         axis_keys.append(key)
         labels.append(label_map.get(key, key[:6]))
         values.append(rank_to_display_score(rank, total))
+        if _radar_axis_is_carry(key, scout_section_specs):
+            carry_indices.append(idx)
+        else:
+            pass_indices.append(idx)
     if len(values) < 3:
         return ""
 
     count = len(values)
     angles = np.linspace(0, 2 * np.pi, count, endpoint=False)
-    values_closed = values + [values[0]]
-    angles_closed = np.append(angles, angles[0])
     low_sample = _is_low_sample_rating(
         player,
         confidence_minutes=confidence_minutes,
@@ -444,35 +449,52 @@ def _pillar_radar_b64(
     ax.set_facecolor("none")
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
-    ax.fill(angles_closed, values_closed, color=radar_fill, alpha=fill_alpha, zorder=2)
-    for i in range(count):
-        j = (i + 1) % count
-        is_pass = not _radar_axis_is_carry(axis_keys[i], scout_section_specs)
-        seg_color = PA_RADAR_PASS_COLOR if is_pass else PA_RADAR_CARRY_COLOR
-        seg_style = "-" if is_pass else (0, (5, 3))
+
+    def _plot_metric_group(indices: list[int], *, color: str, linestyle: str) -> None:
+        if len(indices) < 2:
+            if len(indices) == 1:
+                i = indices[0]
+                ax.plot(
+                    angles[i],
+                    values[i],
+                    marker="o",
+                    color=color,
+                    markersize=5.5,
+                    markeredgecolor="#0f172a",
+                    markeredgewidth=0.7,
+                    alpha=line_alpha,
+                    zorder=5,
+                )
+            return
+        group_angles = [angles[i] for i in indices]
+        group_values = [values[i] for i in indices]
+        angles_closed = np.append(group_angles, group_angles[0])
+        values_closed = group_values + [group_values[0]]
+        ax.fill(angles_closed, values_closed, color=radar_fill, alpha=fill_alpha, zorder=2)
         ax.plot(
-            [angles[i], angles[j]],
-            [values[i], values[j]],
-            color=seg_color,
+            angles_closed,
+            values_closed,
+            color=color,
             linewidth=2.8,
-            linestyle=seg_style,
+            linestyle=linestyle,
             alpha=line_alpha,
             zorder=4,
         )
-    for angle, value, axis_key in zip(angles, values, axis_keys):
-        is_pass = not _radar_axis_is_carry(axis_key, scout_section_specs)
-        marker_color = PA_RADAR_PASS_COLOR if is_pass else PA_RADAR_CARRY_COLOR
-        ax.plot(
-            angle,
-            value,
-            marker="o",
-            color=marker_color,
-            markersize=5.5,
-            markeredgecolor="#0f172a",
-            markeredgewidth=0.7,
-            alpha=line_alpha,
-            zorder=5,
-        )
+        for angle, value in zip(group_angles, group_values):
+            ax.plot(
+                angle,
+                value,
+                marker="o",
+                color=color,
+                markersize=5.5,
+                markeredgecolor="#0f172a",
+                markeredgewidth=0.7,
+                alpha=line_alpha,
+                zorder=5,
+            )
+
+    _plot_metric_group(pass_indices, color=PA_RADAR_PASS_COLOR, linestyle="-")
+    _plot_metric_group(carry_indices, color=PA_RADAR_CARRY_COLOR, linestyle=(0, (5, 3)))
     ax.set_ylim(4.0, 8.0)
     ax.set_yticks([5, 6, 7])
     ax.set_yticklabels([])
