@@ -347,6 +347,8 @@ PA_RADAR_EXCLUDED_SECTIONS: frozenset[str] = frozenset()
 PA_RADAR_PASS_COLOR = "#60a5fa"
 PA_RADAR_CARRY_COLOR = "#34d399"
 PA_RADAR_FILL_NEUTRAL = "#c4b5fd"
+PA_COMPARE_PRIMARY_COLOR = "#a78bfa"
+PA_COMPARE_SECONDARY_COLOR = "#86efac"
 
 
 def _radar_axis_is_carry(metric_key: str, scout_section_specs) -> bool:
@@ -613,9 +615,9 @@ def _pillar_radar_compare_b64(
         carry_flags,
         line_alpha=0.95,
         fill_alpha=0.16,
-        fill_color="#60a5fa",
-        pass_color="#60a5fa",
-        carry_color="#34d399",
+        fill_color=PA_COMPARE_PRIMARY_COLOR,
+        pass_color=PA_COMPARE_PRIMARY_COLOR,
+        carry_color=PA_COMPARE_PRIMARY_COLOR,
         draw_fill=True,
     )
     _plot_player_radar_on_ax(
@@ -625,9 +627,9 @@ def _pillar_radar_compare_b64(
         carry_flags,
         line_alpha=0.9,
         fill_alpha=0.0,
-        fill_color="#f59e0b",
-        pass_color="#f59e0b",
-        carry_color="#fbbf24",
+        fill_color=PA_COMPARE_SECONDARY_COLOR,
+        pass_color=PA_COMPARE_SECONDARY_COLOR,
+        carry_color=PA_COMPARE_SECONDARY_COLOR,
         draw_fill=False,
     )
 
@@ -649,6 +651,33 @@ def _pillar_radar_compare_b64(
     fig.savefig(buf, format="png", dpi=200, transparent=True, bbox_inches="tight", pad_inches=0.06)
     plt.close(fig)
     return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _stat_numeric_value(player: dict, key: str) -> float | None:
+    if key == "minutes_pct":
+        pct = player.get("minutes_pct")
+        return float(pct * 100.0) if pct is not None else None
+    val = player.get(key)
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _cmp_stat_pct_delta_html(self_val: float | None, other_val: float | None) -> str:
+    if self_val is None or other_val is None:
+        return ""
+    if abs(self_val - other_val) < 0.05:
+        return '<span class="cmp-delta flat" title="Empate">●</span>'
+    if other_val == 0:
+        pct = 100.0 if self_val > 0 else 0.0
+    else:
+        pct = abs((self_val - other_val) / other_val) * 100.0
+    if self_val > other_val:
+        return f'<span class="cmp-delta up" title="Acima">▲ {pct:.0f}%</span>'
+    return f'<span class="cmp-delta down" title="Abaixo">▼ {pct:.0f}%</span>'
 
 
 def _progression_compare_stats_html(
@@ -675,6 +704,10 @@ def _progression_compare_stats_html(
         label = html.escape(label_fn(key))
         p_val = html.escape(_stat_display(primary, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn))
         s_val = html.escape(_stat_display(secondary, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn))
+        p_num = _stat_numeric_value(primary, key)
+        s_num = _stat_numeric_value(secondary, key)
+        p_delta = _cmp_stat_pct_delta_html(p_num, s_num)
+        s_delta = _cmp_stat_pct_delta_html(s_num, p_num)
         p_info = primary_ranks.get(key)
         s_info = secondary_ranks.get(key)
         p_rank = ""
@@ -686,10 +719,16 @@ def _progression_compare_stats_html(
         rows.extend([
             '<div class="cmp-row">',
             f'<span class="cmp-cell-label">{label}</span>',
-            f'<span><span class="cmp-cell-value">{p_val}</span>'
-            f'{"<span class=\"cmp-rank-note\">" + p_rank + "</span>" if p_rank else ""}</span>',
-            f'<span><span class="cmp-cell-value">{s_val}</span>'
-            f'{"<span class=\"cmp-rank-note\">" + s_rank + "</span>" if s_rank else ""}</span>',
+            (
+                f'<span><span class="cmp-value-wrap">'
+                f'<span class="cmp-cell-value">{p_val}</span>{p_delta}</span>'
+                f'{"<span class=\"cmp-rank-note\">" + p_rank + "</span>" if p_rank else ""}</span>'
+            ),
+            (
+                f'<span><span class="cmp-value-wrap">'
+                f'<span class="cmp-cell-value">{s_val}</span>{s_delta}</span>'
+                f'{"<span class=\"cmp-rank-note\">" + s_rank + "</span>" if s_rank else ""}</span>'
+            ),
             "</div>",
         ])
     rows.append("</div>")
@@ -701,17 +740,17 @@ def _render_player_comparison_panel(
     *,
     all_players: list[dict],
     progression_by_id: dict[str, dict],
-    position_codes: frozenset[str],
 ) -> None:
     primary_id = str(primary.get("player_id"))
+    primary_position = _player_position_code(primary)
     options = _player_analysis_options(
         all_players,
         progression_by_id,
-        position_codes=position_codes,
+        position_codes=frozenset({primary_position}) if primary_position else frozenset(),
         exclude_player_id=primary_id,
     )
     if not options:
-        st.info("Nenhum outro jogador disponível para comparação nas posições selecionadas.")
+        st.info("Nenhum outro jogador disponível na mesma posição para comparação.")
         return
 
     labels = [o[3] for o in options]
@@ -1623,11 +1662,12 @@ st.markdown(
     }
     .cmp-delta {
         display: inline-block;
-        font-size: 0.58rem;
+        font-size: 0.62rem;
         line-height: 1;
-        margin-left: 0.3rem;
+        margin-left: 0.35rem;
         vertical-align: middle;
         font-weight: 800;
+        white-space: nowrap;
     }
     .cmp-delta.up { color: #34d399; }
     .cmp-delta.down { color: #f87171; }
@@ -1672,9 +1712,42 @@ st.markdown(
     }
     .pa-position-blocks {
         flex: 1 1 520px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.4rem;
+    }
+    .pa-position-blocks [data-testid="stHorizontalBlock"] {
+        gap: 0.35rem;
+        align-items: stretch;
+    }
+    .pa-position-blocks [data-testid="column"] {
+        min-width: 0;
+    }
+    .pa-position-blocks [data-testid="stButton"] {
+        width: 100%;
+    }
+    .pa-position-blocks [data-testid="stButton"] button {
+        width: 100%;
+        min-height: 2.85rem;
+        max-height: 2.85rem;
+        padding: 0.3rem 0.2rem;
+        font-size: 0.62rem;
+        font-weight: 700;
+        line-height: 1.12;
+        white-space: normal;
+        background: linear-gradient(160deg, #151b2b 0%, #101522 100%) !important;
+        border: 1px solid #2a3550 !important;
+        color: #93c5fd !important;
+        border-radius: 10px !important;
+        box-shadow: none !important;
+    }
+    .pa-position-blocks [data-testid="stButton"] button:hover {
+        border-color: #3b82f6 !important;
+        color: #dbeafe !important;
+    }
+    .pa-position-blocks [data-testid="stButton"] button[kind="primary"],
+    .pa-position-blocks [data-testid="stButton"] button[data-testid="baseButton-primary"] {
+        background: linear-gradient(160deg, #1e3a5f 0%, #172554 100%) !important;
+        border-color: #3b82f6 !important;
+        color: #dbeafe !important;
+        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.22) !important;
     }
     .pa-position-block-label {
         width: 100%;
@@ -1717,8 +1790,15 @@ st.markdown(
         margin-right: 0.3rem;
         vertical-align: middle;
     }
-    .pa-compare-legend-primary::before { background: #60a5fa; }
-    .pa-compare-legend-secondary::before { background: #f59e0b; }
+    .pa-compare-legend-primary::before { background: #a78bfa; }
+    .pa-compare-legend-secondary::before { background: #86efac; }
+    .pa-maps-compact {
+        max-width: 760px;
+        margin: 0 auto;
+    }
+    .pa-maps-compact [data-testid="stVerticalBlock"] > div {
+        gap: 0.35rem;
+    }
     .pa-stats-filter {
         display: grid;
         grid-template-columns: minmax(220px, 0.92fr) minmax(320px, 1.35fr) minmax(210px, 0.78fr);
@@ -4118,30 +4198,30 @@ def _resolve_progression_analysis_player(
     return resolved
 
 
-def render_progression_maps_only(player: dict, passes, carries) -> None:
+def render_progression_maps_only(player: dict, passes, carries, *, compact: bool = False) -> None:
     team_label = player.get("team", "—")
     player_name = player["player_name"]
     r1c1, r1c2 = st.columns(2, gap="small")
     with r1c1:
         fig_all = draw_all_actions_map(
-            passes, carries, player_name, team_label, compact=False,
+            passes, carries, player_name, team_label, compact=compact,
         )
         st.pyplot(fig_all, clear_figure=True, use_container_width=True)
     with r1c2:
         fig_heat_all = draw_all_actions_heatmap(
-            passes, carries, player_name, team_label, compact=False,
+            passes, carries, player_name, team_label, compact=compact,
         )
         st.pyplot(fig_heat_all, clear_figure=True, use_container_width=True)
 
     r2c1, r2c2 = st.columns(2, gap="small")
     with r2c1:
         fig_threat = draw_threat_actions_map(
-            passes, carries, player_name, team_label, compact=False,
+            passes, carries, player_name, team_label, compact=compact,
         )
         st.pyplot(fig_threat, clear_figure=True, use_container_width=True)
     with r2c2:
         fig_heat_threat = draw_threat_actions_heatmap(
-            passes, carries, player_name, team_label, compact=False,
+            passes, carries, player_name, team_label, compact=compact,
         )
         st.pyplot(fig_heat_threat, clear_figure=True, use_container_width=True)
 
@@ -4343,6 +4423,8 @@ def render_maps_section(
         st.warning("Could not build a profile for this player.")
         return
 
+    st.markdown('<div class="pa-maps-compact">', unsafe_allow_html=True)
+
     passes_df = passes_by_player.get(player_id)
     carries_df = carries_by_player.get(player_id)
     has_actions = (
@@ -4355,12 +4437,14 @@ def render_maps_section(
             carries_df,
             str(player.get("player_name", "")),
             profile=False,
+            mini=True,
         )
         st.pyplot(fig_origin, clear_figure=True, use_container_width=True)
     else:
         st.info("Sem ações com coordenadas para este jogador.")
 
-    render_progression_maps_only(player, passes_df, carries_df)
+    render_progression_maps_only(player, passes_df, carries_df, compact=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_player_analysis_section(
@@ -4390,10 +4474,6 @@ def render_player_analysis_section(
     )
     if not player_id:
         return
-
-    position_codes = _position_codes_from_blocks(
-        st.session_state.get(PLAYER_ANALYSIS_POSITION_BLOCKS_KEY, set())
-    )
 
     player = _resolve_progression_analysis_player(
         player_id,
@@ -4460,7 +4540,6 @@ def render_player_analysis_section(
             player,
             all_players=all_players,
             progression_by_id=progression_by_id,
-            position_codes=position_codes,
         )
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -5233,16 +5312,17 @@ def main() -> None:
 
     selected_player_id = st.session_state.get("map_player_id")
 
-    tab_pres, tab_maps, tab_analysis = st.tabs(
-        ["Overview", "Maps", "Player Analysis"]
+    tab_pres, tab_analysis, tab_maps = st.tabs(
+        ["Overview", "Player Analysis", "Maps"]
     )
     with tab_pres:
         render_presentation_tab(
             all_players, passes_by_player, players_by_id, pool_by_position, rated=rated,
         )
-    with tab_maps:
-        render_maps_section(
+    with tab_analysis:
+        render_player_analysis_section(
             all_players,
+            carries_players,
             passes_by_player,
             carries_by_player,
             progression_by_id,
@@ -5252,10 +5332,9 @@ def main() -> None:
             pool_by_position,
             carries_pool_by_position,
         )
-    with tab_analysis:
-        render_player_analysis_section(
+    with tab_maps:
+        render_maps_section(
             all_players,
-            carries_players,
             passes_by_player,
             carries_by_player,
             progression_by_id,

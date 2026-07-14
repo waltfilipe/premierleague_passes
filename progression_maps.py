@@ -15,6 +15,8 @@ from mplsoccer import Pitch
 
 FIG_W, FIG_H = 10.0, 6.67
 FIG_DPI = 320
+FIG_W_COMPACT, FIG_H_COMPACT = 5.6, 3.75
+FIG_DPI_COMPACT = 220
 MAP_REF_WIDTH = 10.0
 FIELD_X, FIELD_Y = 120.0, 80.0
 HEATMAP_COLS = 12
@@ -136,8 +138,12 @@ def draw_all_actions_map(
     compact: bool = False,
 ):
     """All completed passes and ball-carries on one pitch."""
-    figsize = (FIG_W, FIG_H)
-    dpi = FIG_DPI
+    if compact:
+        figsize = (FIG_W_COMPACT, FIG_H_COMPACT)
+        dpi = FIG_DPI_COMPACT
+    else:
+        figsize = (FIG_W, FIG_H)
+        dpi = FIG_DPI
     fig_w = figsize[0]
     scale = _map_scale(fig_w)
     fig, ax, pitch = _base_pitch(figsize=figsize, dpi=dpi)
@@ -178,8 +184,12 @@ def draw_threat_actions_map(
     compact: bool = False,
 ):
     """Threat passes and threat carries on one pitch."""
-    figsize = (FIG_W, FIG_H)
-    dpi = FIG_DPI
+    if compact:
+        figsize = (FIG_W_COMPACT, FIG_H_COMPACT)
+        dpi = FIG_DPI_COMPACT
+    else:
+        figsize = (FIG_W, FIG_H)
+        dpi = FIG_DPI
     fig_w = figsize[0]
     scale = _map_scale(fig_w)
     fig, ax, pitch = _base_pitch(figsize=figsize, dpi=dpi)
@@ -218,9 +228,14 @@ def _destination_heatmap(
     impact_only: bool,
     title: str,
     cbar_label: str,
+    compact: bool = False,
 ):
-    figsize = (FIG_W, FIG_H)
-    dpi = FIG_DPI
+    if compact:
+        figsize = (FIG_W_COMPACT, FIG_H_COMPACT)
+        dpi = FIG_DPI_COMPACT
+    else:
+        figsize = (FIG_W, FIG_H)
+        dpi = FIG_DPI
     fig_w = figsize[0]
     scale = _map_scale(fig_w)
     fig, ax, pitch = _base_pitch(figsize=figsize, dpi=dpi)
@@ -289,13 +304,14 @@ def draw_all_actions_heatmap(
     compact: bool = False,
 ):
     """Heatmap of all completed pass and carry destinations."""
-    _ = player_name, match_label, compact
+    _ = player_name, match_label
     return _destination_heatmap(
         passes,
         carries,
         impact_only=False,
         title="Heatmap — all actions",
         cbar_label="Actions",
+        compact=compact,
     )
 
 
@@ -308,11 +324,12 @@ def draw_threat_actions_heatmap(
     compact: bool = False,
 ):
     """Heatmap of threat pass and threat carry destinations."""
-    _ = player_name, match_label, compact
+    _ = player_name, match_label
     return _destination_heatmap(
         passes,
         carries,
         impact_only=True,
         title="Heatmap — threat actions",
         cbar_label="Threat actions",
+        compact=compact,
     )

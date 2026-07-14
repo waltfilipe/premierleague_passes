@@ -18,6 +18,8 @@ FIG_W, FIG_H = 7.2, 4.8
 FIG_DPI = 220
 FIG_W_COMPACT, FIG_H_COMPACT = 6.8, 4.5
 FIG_DPI_COMPACT = 280
+FIG_W_MINI, FIG_H_MINI = 5.2, 3.45
+FIG_DPI_MINI = 200
 FIG_W_DASHBOARD, FIG_H_DASHBOARD = 4.6, 3.05
 FIG_W_DASHBOARD_LG, FIG_H_DASHBOARD_LG = 5.5, 3.55
 FIG_DPI_DASHBOARD = 260
@@ -586,6 +588,7 @@ def draw_action_origin_smooth_heatmap(
     *,
     profile: bool = False,
     completed_only: bool = True,
+    mini: bool = False,
 ):
     """Smooth origin density heatmap (SofaScore-style, no visible grid cells)."""
     from scipy.ndimage import gaussian_filter
@@ -593,6 +596,9 @@ def draw_action_origin_smooth_heatmap(
     if profile:
         figsize = (3.85, 2.65)
         dpi = 220
+    elif mini:
+        figsize = (FIG_W_MINI, FIG_H_MINI)
+        dpi = FIG_DPI_MINI
     else:
         figsize = (FIG_W_COMPACT, FIG_H_COMPACT)
         dpi = FIG_DPI_COMPACT
