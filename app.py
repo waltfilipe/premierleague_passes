@@ -740,6 +740,24 @@ st.markdown(
     }
     .metric-line span:last-child { white-space: nowrap; }
     .val-wrap { display: inline-flex; align-items: center; gap: 0.5rem; }
+    .rank-bar {
+        position: relative;
+        display: inline-block;
+        width: 2.6rem;
+        height: 0.38rem;
+        border-radius: 999px;
+        background: #1e293b;
+        overflow: hidden;
+        flex-shrink: 0;
+        border: 1px solid rgba(255,255,255,0.12);
+        cursor: help;
+    }
+    .rank-bar-fill {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        min-width: 2px;
+    }
     .rank-badge {
         display: inline-block;
         width: 12px;
@@ -1951,6 +1969,21 @@ def rank_color(rank: int, total: int) -> str:
     return score_display_color(rank_to_display_score(effective_rank, total))
 
 
+def _rank_bar_html(rank: int, total: int) -> str:
+    """Mini progress bar filled by position-group percentile (rank gradient)."""
+    color = rank_color(rank, total)
+    display_score = rank_to_display_score(min(max(rank, 1), total), total)
+    width_pct = max(6.0, min(100.0, (display_score - 3.0) / 6.0 * 100.0))
+    return (
+        f'<span class="rank-tip">'
+        f'<span class="rank-bar">'
+        f'<span class="rank-bar-fill" style="width:{width_pct:.0f}%;background:{color}"></span>'
+        f"</span>"
+        f'<span class="rank-tipbox">{rank}/{total}</span>'
+        f"</span>"
+    )
+
+
 def rating_value_color(pass_rating: float | None) -> str:
     if pass_rating is None:
         return "#334155"
@@ -2440,13 +2473,7 @@ def _metric_line_html(
         if info:
             rank = int(info["rank"])
             total = int(info["total"])
-            color = rank_color(rank, total)
-            badge = (
-                f'<span class="rank-tip">'
-                f'<span class="rank-badge" style="background:{color}"></span>'
-                f'<span class="rank-tipbox">{rank}/{total}</span>'
-                f"</span>"
-            )
+            badge = _rank_bar_html(rank, total)
     rank_sub = (
         _metric_rank_subtitle_html(
             player or {}, key, metric_ranks, rank_in_group_fn=rank_in_group_fn,
@@ -2846,13 +2873,7 @@ def _participation_row_html(
     if info:
         rank = int(info["rank"])
         total = int(info["total"])
-        color = rank_color(rank, total)
-        badge = (
-            f'<span class="rank-tip">'
-            f'<span class="rank-badge" style="background:{color}"></span>'
-            f'<span class="rank-tipbox">{rank}/{total}</span>'
-            f"</span>"
-        )
+        badge = _rank_bar_html(rank, total)
     value_inner = (
         f'<span class="val-wrap">{badge}<span class="pa-part-val-num">{html.escape(value)}</span></span>'
         if badge
@@ -3607,7 +3628,17 @@ def _sync_player_analysis_selection(
 def _prepare_sb_to_sa_similarity_context(
     all_players: list[dict],
     carries_players_sb: list[dict],
-) -> tuple[dict, dict, dict[str, dict], dict[str, list[dict]], dict[str, list[dict]]] | None:
+) -> tuple[
+    dict,
+    dict,
+    dict[str, dict],
+    dict[str, list[dict]],
+    dict[str, list[dict]],
+    dict[str, dict],
+    dict[str, dict],
+    dict[str, dict],
+    dict[str, dict],
+] | None:
     serie_a_players = load_serie_a_players()
     if not serie_a_players:
         return None
@@ -3615,7 +3646,9 @@ def _prepare_sb_to_sa_similarity_context(
     serie_a_passes = load_serie_a_passes()
     serie_a_carries = load_serie_a_carries()
     serie_a_carry_players = load_serie_a_carry_players()
+    sb_pass_by_id = {str(p["player_id"]): p for p in all_players}
     sb_carry_by_id = {str(p["player_id"]): p for p in carries_players_sb}
+    sa_pass_by_id = {str(p["player_id"]): p for p in serie_a_players}
     sa_carry_by_id = {str(p["player_id"]): p for p in serie_a_carry_players}
     sb_merged = sim.enrich_players_with_carry_metrics(
         enrich_player_eligibility(all_players),
@@ -3634,6 +3667,10 @@ def _prepare_sb_to_sa_similarity_context(
         players_sb_by_id,
         sa_by_pos,
         sb_by_pos,
+        sb_pass_by_id,
+        sb_carry_by_id,
+        sa_pass_by_id,
+        sa_carry_by_id,
     )
 
 
@@ -3654,7 +3691,7 @@ def _render_player_analysis_similarity(
         )
         return
 
-    serie_a_passes, serie_a_carries, players_sb_by_id, sa_by_pos, sb_by_pos = context
+    serie_a_passes, serie_a_carries, players_sb_by_id, sa_by_pos, sb_by_pos, sb_pass_by_id, sb_carry_by_id, sa_pass_by_id, sa_carry_by_id = context
     if target_id not in players_sb_by_id:
         st.warning("Selected player is not available for similarity.")
         return
@@ -3676,11 +3713,20 @@ def _render_player_analysis_similarity(
     st.markdown(
         f'<p class="pa-similar-caption">Top {SIMILARITY_TOP_K} Serie A players in '
         f"<strong>{html.escape(pool_label)}</strong> ({len(pool)} eligible). "
-        "Ranked by pass+carry metrics; Origin reflects shared start locations. "
-        "Click a row to compare.</p>",
+        "Ranked by xStats (xT metrics); Stats p90 compares traditional volume; "
+        "Origin reflects shared start locations. Click a row to compare.</p>",
         unsafe_allow_html=True,
     )
     results = sim.find_similar_option_c(target_player, pool, top_k=SIMILARITY_TOP_K)
+    results = sim.attach_traditional_p90_similarity(
+        results,
+        target_player,
+        pool,
+        target_pass_by_id=sb_pass_by_id,
+        target_carry_by_id=sb_carry_by_id,
+        pool_pass_by_id=sa_pass_by_id,
+        pool_carry_by_id=sa_carry_by_id,
+    )
     results = sim.attach_pass_origin_similarity(
         results,
         passes_by_player.get(target_id),
@@ -3702,10 +3748,14 @@ def _render_player_analysis_similarity(
         pick_key=pick_key,
         include_origin=False,
         origin_column=True,
+        traditional_column=True,
         html_table=True,
     )
     with st.expander("Metrics used in similarity"):
+        st.markdown("**xStats (xT)**")
         st.write(", ".join(sim.similarity_metric_label(k) for k in sim.SIMILARITY_METRICS_A))
+        st.markdown("**Stats p90 (traditional)**")
+        st.write(", ".join(pge.METRIC_LABELS.get(k, k) for k in sim.SIMILARITY_TRADITIONAL_METRICS))
 
 
 def render_player_analysis_section(
@@ -4334,7 +4384,11 @@ def _similarity_meter_html(pct: float | None, *, tone: str = "metrics") -> str:
     if pct is None:
         return '<span class="sim-empty">—</span>'
     value = max(0.0, min(100.0, float(pct)))
-    tone_cls = " origin" if tone == "origin" else ""
+    tone_cls = ""
+    if tone == "origin":
+        tone_cls = " origin"
+    elif tone == "traditional":
+        tone_cls = " traditional"
     return (
         f'<span class="sim-meter-wrap{tone_cls}">'
         f'<span class="sim-meter"><span class="sim-meter-fill" style="width:{value:.0f}%"></span></span>'
@@ -4357,10 +4411,11 @@ _SIMILARITY_TABLE_EMBED_CSS = """
 .pa-sim-table tr:last-child td{border-bottom:none}
 .pa-sim-table .rank{color:#64748b;font-weight:700;width:2.2rem}
 .pa-sim-table .team{color:#94a3b8;font-size:0.82rem}
-.pa-sim-table .sim-col,.pa-sim-table .origin-col{min-width:7.5rem}
-.sim-meter-wrap{display:inline-flex;align-items:center;gap:0.45rem;min-width:6.5rem}
+.pa-sim-table .sim-col,.pa-sim-table .traditional-col,.pa-sim-table .origin-col{min-width:6.8rem}
+.sim-meter-wrap{display:inline-flex;align-items:center;gap:0.45rem;min-width:6.2rem}
 .sim-meter{position:relative;width:4.5rem;height:0.42rem;border-radius:999px;background:#1e293b;overflow:hidden}
 .sim-meter-fill{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#2563eb,#38bdf8)}
+.sim-meter-wrap.traditional .sim-meter-fill{background:linear-gradient(90deg,#7c3aed,#c084fc)}
 .sim-meter-wrap.origin .sim-meter-fill{background:linear-gradient(90deg,#0f766e,#34d399)}
 .sim-pct{font-size:0.8rem;font-weight:700;color:#f8fafc;min-width:2.2rem}
 .sim-empty{color:#64748b}
@@ -4372,10 +4427,16 @@ def _similarity_results_table_html(
     *,
     selected_idx: int | None,
     origin_column: bool = True,
+    traditional_column: bool = False,
 ) -> str:
     body = []
     for idx, row in enumerate(results):
         sel = " sel" if selected_idx is not None and idx == selected_idx else ""
+        traditional_cell = (
+            f'<td class="traditional-col">{_similarity_meter_html(row.get("traditional_similarity_pct"), tone="traditional")}</td>'
+            if traditional_column
+            else ""
+        )
         origin_val = row.get("origin_similarity_pct")
         origin_cell = (
             f'<td class="origin-col">{_similarity_meter_html(origin_val, tone="origin")}</td>'
@@ -4388,13 +4449,16 @@ def _similarity_results_table_html(
             f"<td>{html.escape(str(row.get('player_name', '—')))}</td>"
             f'<td class="team">{html.escape(str(row.get("team", "—")))}</td>'
             f'<td class="sim-col">{_similarity_meter_html(row.get("similarity_pct"))}</td>'
+            f"{traditional_cell}"
             f"{origin_cell}"
             "</tr>"
         )
-    origin_head = '<th>Origin</th>' if origin_column else ""
+    traditional_head = "<th>Stats p90</th>" if traditional_column else ""
+    origin_head = "<th>Origin</th>" if origin_column else ""
     return (
         '<table class="pa-sim-table"><thead><tr>'
-        "<th>#</th><th>Player</th><th>Team</th><th>Similarity</th>"
+        "<th>#</th><th>Player</th><th>Team</th><th>xStats</th>"
+        f"{traditional_head}"
         f"{origin_head}"
         "</tr></thead><tbody>"
         f"{''.join(body)}</tbody></table>"
@@ -4406,6 +4470,7 @@ def _render_similarity_results_html_table(
     *,
     pick_key: str,
     origin_column: bool = True,
+    traditional_column: bool = False,
 ) -> int | None:
     _sync_similar_row_selection(pick_key)
     selected_idx = st.session_state.get(pick_key)
@@ -4421,6 +4486,7 @@ def _render_similarity_results_html_table(
         results,
         selected_idx=selected_idx,
         origin_column=origin_column,
+        traditional_column=traditional_column,
     )
     row_height = 44
     height = 56 + row_height * max(len(results), 1)
@@ -4505,6 +4571,7 @@ def _render_similarity_results_tab(
     include_origin: bool = False,
     origin_dual: bool = False,
     origin_column: bool = False,
+    traditional_column: bool = False,
     html_table: bool = False,
 ) -> None:
     import pandas as pd
@@ -4519,6 +4586,7 @@ def _render_similarity_results_tab(
             results,
             pick_key=pick_key,
             origin_column=origin_column,
+            traditional_column=traditional_column,
         )
         if selected_idx is None:
             st.caption("Click a row to compare with the selected player.")
@@ -4605,6 +4673,10 @@ def _render_similarity_results_tab(
             similarity_pct=float(similar.get("similarity_pct") or 0),
             comparison_mode=True,
         )
+        if similar.get("traditional_similarity_pct") is not None:
+            st.caption(
+                f"Stats p90 similarity: {float(similar['traditional_similarity_pct']):.1f}%"
+            )
         if similar.get("origin_similarity_pct") is not None:
             st.caption(
                 f"Origin similarity — passes + carries ({sim.ORIGIN_ANALYSIS_COLS}×{sim.ORIGIN_ANALYSIS_ROWS}): "

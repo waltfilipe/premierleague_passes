@@ -132,6 +132,38 @@ SIMILARITY_METRIC_LABELS: dict[str, str] = {
     carry_metric_key("dribbles_final_third_p90"): "Successful Dribbles",
 }
 
+SIMILARITY_TRADITIONAL_METRICS: tuple[str, ...] = (
+    "passes_total",
+    "pass_completion_pct",
+    "long_balls",
+    "long_ball_completion_pct",
+    "progressive_passes",
+    "final_third_passes",
+    "passes_to_box",
+    "key_passes",
+    "crosses_total",
+    "carry_progressive_carries",
+    "very_progressive_carries",
+    "dribbles_success",
+    "dribbles_final_third",
+)
+
+SIMILARITY_TRADITIONAL_WEIGHTS: dict[str, float] = {
+    "passes_total": 1.0,
+    "pass_completion_pct": 1.0,
+    "long_balls": 1.0,
+    "long_ball_completion_pct": 1.0,
+    "progressive_passes": 1.5,
+    "final_third_passes": 1.0,
+    "passes_to_box": 1.0,
+    "key_passes": 1.5,
+    "crosses_total": 1.0,
+    "carry_progressive_carries": 1.5,
+    "very_progressive_carries": 1.0,
+    "dribbles_success": 1.0,
+    "dribbles_final_third": 1.0,
+}
+
 from heuristic_scoring import COMPARISON_GROUP_LABELS, comparison_position_group
 
 TOP_K_DEFAULT = 10
@@ -503,6 +535,92 @@ def find_similar_option_a(
         })
     results.sort(key=lambda r: (-r["similarity_pct"], r["distance"]))
     return results[:top_k]
+
+
+def _enrich_traditional_p90_player(
+    player: dict,
+    pass_by_id: dict[str, dict],
+    carry_by_id: dict[str, dict],
+) -> dict:
+    from progression_engine import enrich_traditional_participation_fields
+
+    pid = str(player["player_id"])
+    return enrich_traditional_participation_fields(
+        dict(player),
+        pass_player=pass_by_id.get(pid),
+        carry_player=carry_by_id.get(pid),
+    )
+
+
+def _metric_similarity_pct(
+    target: dict,
+    candidate: dict,
+    pool: list[dict],
+    keys: tuple[str, ...],
+    weights: dict[str, float] | None = None,
+) -> float:
+    """Z-score similarity between target and candidate within a reference pool."""
+    weight_map = weights or {k: 1.0 for k in keys}
+    w = np.array([weight_map.get(k, 1.0) for k in keys], dtype=float)
+    raw_pool = _metric_table(pool, keys)
+    mean = raw_pool.mean()
+    std = raw_pool.std(ddof=0).replace(0, np.nan)
+    z_pool = ((raw_pool - mean) / std).fillna(0.0)
+
+    tvec = _metric_vector(target, keys)
+    tz = ((pd.Series(tvec, index=keys) - mean) / std).fillna(0.0).to_numpy(dtype=float)
+    cvec = _metric_vector(candidate, keys)
+    cz = ((pd.Series(cvec, index=keys) - mean) / std).fillna(0.0).to_numpy(dtype=float)
+
+    diff = cz - tz
+    dist = float(np.sqrt((diff ** 2 * w).sum()))
+    diffs_all = z_pool.to_numpy(dtype=float) - tz
+    dists_all = np.sqrt((diffs_all ** 2 * w).sum(axis=1))
+    scale = float(dists_all.max()) if len(dists_all) else 1.0
+    if scale <= 0:
+        scale = 1.0
+    return round(_distance_to_similarity(dist, scale), 1)
+
+
+def attach_traditional_p90_similarity(
+    results: list[dict],
+    target: dict,
+    pool: list[dict],
+    *,
+    target_pass_by_id: dict[str, dict],
+    target_carry_by_id: dict[str, dict],
+    pool_pass_by_id: dict[str, dict],
+    pool_carry_by_id: dict[str, dict],
+) -> list[dict[str, Any]]:
+    """Annotate xStats neighbours with traditional volume p90 profile similarity."""
+    if not results or not pool:
+        return [{**row, "traditional_similarity_pct": None} for row in results]
+
+    enriched_target = _enrich_traditional_p90_player(
+        target, target_pass_by_id, target_carry_by_id,
+    )
+    enriched_pool = [
+        _enrich_traditional_p90_player(player, pool_pass_by_id, pool_carry_by_id)
+        for player in pool
+    ]
+    enriched_by_id = {str(player["player_id"]): player for player in enriched_pool}
+    keys = SIMILARITY_TRADITIONAL_METRICS
+
+    enriched_results: list[dict[str, Any]] = []
+    for row in results:
+        candidate = enriched_by_id.get(str(row["player_id"]))
+        if candidate is None:
+            enriched_results.append({**row, "traditional_similarity_pct": None})
+            continue
+        sim = _metric_similarity_pct(
+            enriched_target,
+            candidate,
+            enriched_pool,
+            keys,
+            SIMILARITY_TRADITIONAL_WEIGHTS,
+        )
+        enriched_results.append({**row, "traditional_similarity_pct": sim})
+    return enriched_results
 
 
 def attach_pass_origin_similarity(

@@ -618,21 +618,18 @@ def enrich_traditional_participation_fields(
     src_pass = pass_player or {}
     src_carry = carry_player or {}
 
-    for key in (
-        "passes_total",
-        "passes_completed",
-        "long_balls",
-        "long_balls_completed",
-        "progressive_passes",
-        "final_third_passes",
-        "passes_to_box",
-        "key_passes",
-        "crosses_total",
-        "pass_completion_pct",
-        "long_ball_completion_pct",
-    ):
-        if out.get(key) is None and src_pass.get(key) is not None:
+    # Volume counts must always come from raw engine totals — never reuse values
+    # that may already have been converted to per-90 in a prior enrichment pass.
+    for key in TRADITIONAL_PASS_VOLUME_KEYS:
+        if key in src_pass:
             out[key] = src_pass[key]
+    for key in ("passes_completed", "long_balls_completed"):
+        if key in src_pass:
+            out[key] = src_pass[key]
+    if src_pass.get("minutes") is not None:
+        out["minutes"] = src_pass["minutes"]
+    elif src_carry.get("minutes") is not None:
+        out["minutes"] = src_carry["minutes"]
 
     carry_field_map = {
         "carry_progressive_carries": "progressive_passes",
@@ -644,8 +641,16 @@ def enrich_traditional_participation_fields(
         "dribble_success_pct": "dribble_success_pct",
     }
     for merged_key, carry_key in carry_field_map.items():
-        if out.get(merged_key) is None and src_carry.get(carry_key) is not None:
+        if merged_key in TRADITIONAL_CARRY_VOLUME_KEYS and carry_key in src_carry:
             out[merged_key] = src_carry[carry_key]
+        elif out.get(merged_key) is None and src_carry.get(carry_key) is not None:
+            out[merged_key] = src_carry[carry_key]
+
+    for pct_key in ("pass_completion_pct", "long_ball_completion_pct", "dribble_success_pct"):
+        if pct_key in src_pass:
+            out[pct_key] = src_pass[pct_key]
+        elif pct_key in src_carry:
+            out[pct_key] = src_carry[pct_key]
 
     passes_total = float(out.get("passes_total") or 0)
     passes_completed = float(out.get("passes_completed") or 0)
