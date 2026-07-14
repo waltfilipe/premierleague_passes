@@ -1710,44 +1710,50 @@ st.markdown(
         align-items: flex-start;
         margin-bottom: 0.85rem;
     }
-    .pa-position-blocks {
-        flex: 1 1 520px;
+    .pa-position-slicer {
+        width: 100%;
+        margin-bottom: 0.15rem;
     }
-    .pa-position-blocks [data-testid="stHorizontalBlock"] {
+    .pa-position-grid {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
         gap: 0.35rem;
-        align-items: stretch;
-    }
-    .pa-position-blocks [data-testid="column"] {
-        min-width: 0;
-    }
-    .pa-position-blocks [data-testid="stButton"] {
         width: 100%;
     }
-    .pa-position-blocks [data-testid="stButton"] button {
-        width: 100%;
+    @media (max-width: 1100px) {
+        .pa-position-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+    @media (max-width: 700px) {
+        .pa-position-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .pa-pos-chip {
+        display: flex;
+        align-items: center;
+        justify-content: center;
         min-height: 2.85rem;
         max-height: 2.85rem;
-        padding: 0.3rem 0.2rem;
+        padding: 0.3rem 0.25rem;
         font-size: 0.62rem;
         font-weight: 700;
         line-height: 1.12;
-        white-space: normal;
-        background: linear-gradient(160deg, #151b2b 0%, #101522 100%) !important;
-        border: 1px solid #2a3550 !important;
-        color: #93c5fd !important;
-        border-radius: 10px !important;
-        box-shadow: none !important;
+        text-align: center;
+        text-decoration: none;
+        background: linear-gradient(160deg, #151b2b 0%, #101522 100%);
+        border: 1px solid #2a3550;
+        color: #93c5fd;
+        border-radius: 10px;
+        box-sizing: border-box;
+        transition: border-color 0.15s ease, color 0.15s ease;
     }
-    .pa-position-blocks [data-testid="stButton"] button:hover {
-        border-color: #3b82f6 !important;
-        color: #dbeafe !important;
+    .pa-pos-chip:hover {
+        border-color: #3b82f6;
+        color: #dbeafe;
     }
-    .pa-position-blocks [data-testid="stButton"] button[kind="primary"],
-    .pa-position-blocks [data-testid="stButton"] button[data-testid="baseButton-primary"] {
-        background: linear-gradient(160deg, #1e3a5f 0%, #172554 100%) !important;
-        border-color: #3b82f6 !important;
-        color: #dbeafe !important;
-        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.22) !important;
+    .pa-pos-chip-on {
+        background: linear-gradient(160deg, #1e3a5f 0%, #172554 100%);
+        border-color: #3b82f6;
+        color: #dbeafe;
+        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.22);
     }
     .pa-position-block-label {
         width: 100%;
@@ -1792,12 +1798,13 @@ st.markdown(
     }
     .pa-compare-legend-primary::before { background: #a78bfa; }
     .pa-compare-legend-secondary::before { background: #86efac; }
-    .pa-maps-compact {
-        max-width: 760px;
-        margin: 0 auto;
+    .pa-maps-grid {
+        max-width: 680px;
+        margin: 0.25rem auto 0 auto;
     }
-    .pa-maps-compact [data-testid="stVerticalBlock"] > div {
-        gap: 0.35rem;
+    .pa-maps-grid [data-testid="stHorizontalBlock"] {
+        gap: 0.4rem;
+        justify-content: center;
     }
     .pa-stats-filter {
         display: grid;
@@ -2528,32 +2535,72 @@ def _position_blocks_for_player(player: dict) -> set[str]:
     return {PLAYER_ANALYSIS_POSITION_BLOCKS[0][0]}
 
 
+def _apply_position_block_toggle_from_query() -> None:
+    block_id = st.query_params.get("pos_toggle")
+    if not block_id:
+        return
+    block_id = str(block_id)
+    if block_id not in PLAYER_POSITION_BLOCK_BY_ID:
+        try:
+            del st.query_params["pos_toggle"]
+        except Exception:
+            pass
+        return
+
+    state_key = PLAYER_ANALYSIS_POSITION_BLOCKS_KEY
+    selected = set(
+        st.session_state.get(
+            state_key,
+            {bid for bid, _, _ in PLAYER_ANALYSIS_POSITION_BLOCKS},
+        )
+    )
+    if block_id in selected and len(selected) > 1:
+        selected.discard(block_id)
+    elif block_id not in selected:
+        selected.add(block_id)
+    st.session_state[state_key] = selected
+    st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
+    _clear_player_select_widgets()
+    st.session_state.pop(PLAYER_ANALYSIS_COMPARE_KEY, None)
+    try:
+        del st.query_params["pos_toggle"]
+    except Exception:
+        pass
+    st.rerun()
+
+
+def _position_blocks_html(selected: set[str]) -> str:
+    from urllib.parse import urlencode
+
+    chips: list[str] = []
+    for block_id, label, _codes in PLAYER_ANALYSIS_POSITION_BLOCKS:
+        is_on = block_id in selected
+        chip_cls = "pa-pos-chip pa-pos-chip-on" if is_on else "pa-pos-chip"
+        params = {k: v for k, v in st.query_params.items() if k != "pos_toggle"}
+        params["pos_toggle"] = block_id
+        href = "?" + urlencode(params, doseq=True)
+        chips.append(
+            f'<a class="{chip_cls}" href="{html.escape(href, quote=True)}">'
+            f"{html.escape(label)}</a>"
+        )
+    return (
+        '<div class="pa-position-slicer">'
+        '<p class="pa-position-block-label">Posição</p>'
+        f'<div class="pa-position-grid">{"".join(chips)}</div>'
+        "</div>"
+    )
+
+
 def _render_position_block_slicer(*, key_prefix: str = "pa") -> frozenset[str]:
+    _ = key_prefix
+    _apply_position_block_toggle_from_query()
+
     state_key = PLAYER_ANALYSIS_POSITION_BLOCKS_KEY
     if state_key not in st.session_state:
         st.session_state[state_key] = {block_id for block_id, _, _ in PLAYER_ANALYSIS_POSITION_BLOCKS}
 
     selected: set[str] = set(st.session_state[state_key])
-    st.markdown('<p class="pa-position-block-label">Posição</p>', unsafe_allow_html=True)
-    block_cols = st.columns(len(PLAYER_ANALYSIS_POSITION_BLOCKS))
-    for col, (block_id, label, _codes) in zip(block_cols, PLAYER_ANALYSIS_POSITION_BLOCKS):
-        with col:
-            is_selected = block_id in selected
-            if st.button(
-                label,
-                key=f"{key_prefix}_pos_block_{block_id}",
-                type="primary" if is_selected else "secondary",
-                use_container_width=True,
-            ):
-                if is_selected and len(selected) > 1:
-                    selected.discard(block_id)
-                elif not is_selected:
-                    selected.add(block_id)
-                st.session_state[state_key] = selected
-                st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
-                _clear_player_select_widgets()
-                st.session_state.pop(PLAYER_ANALYSIS_COMPARE_KEY, None)
-                st.rerun()
+    st.html(_position_blocks_html(selected), width="stretch")
 
     if not selected:
         selected = {PLAYER_ANALYSIS_POSITION_BLOCKS[0][0]}
@@ -2635,9 +2682,7 @@ def _render_shared_player_slicers(
 
     pos_col, player_col = st.columns([2.1, 1], gap="medium")
     with pos_col:
-        st.markdown('<div class="pa-position-blocks">', unsafe_allow_html=True)
         position_codes = _render_position_block_slicer(key_prefix=key_prefix)
-        st.markdown("</div>", unsafe_allow_html=True)
     with player_col:
         st.markdown('<div class="pa-player-slicer">', unsafe_allow_html=True)
         options = _player_analysis_options(
@@ -4198,32 +4243,53 @@ def _resolve_progression_analysis_player(
     return resolved
 
 
+MAPS_TAB_PLOT_WIDTH = 300
+MAPS_TAB_ORIGIN_WIDTH = 420
+
+
+def _render_map_pyplot(fig, *, width: int = MAPS_TAB_PLOT_WIDTH) -> None:
+    st.pyplot(fig, clear_figure=True, width=width)
+
+
 def render_progression_maps_only(player: dict, passes, carries, *, compact: bool = False) -> None:
     team_label = player.get("team", "—")
     player_name = player["player_name"]
+    plot_width = MAPS_TAB_PLOT_WIDTH if compact else "stretch"
     r1c1, r1c2 = st.columns(2, gap="small")
     with r1c1:
         fig_all = draw_all_actions_map(
             passes, carries, player_name, team_label, compact=compact,
         )
-        st.pyplot(fig_all, clear_figure=True, use_container_width=True)
+        if compact:
+            _render_map_pyplot(fig_all, width=MAPS_TAB_PLOT_WIDTH)
+        else:
+            st.pyplot(fig_all, clear_figure=True, width=plot_width)
     with r1c2:
         fig_heat_all = draw_all_actions_heatmap(
             passes, carries, player_name, team_label, compact=compact,
         )
-        st.pyplot(fig_heat_all, clear_figure=True, use_container_width=True)
+        if compact:
+            _render_map_pyplot(fig_heat_all, width=MAPS_TAB_PLOT_WIDTH)
+        else:
+            st.pyplot(fig_heat_all, clear_figure=True, width=plot_width)
 
     r2c1, r2c2 = st.columns(2, gap="small")
     with r2c1:
         fig_threat = draw_threat_actions_map(
             passes, carries, player_name, team_label, compact=compact,
         )
-        st.pyplot(fig_threat, clear_figure=True, use_container_width=True)
+        if compact:
+            _render_map_pyplot(fig_threat, width=MAPS_TAB_PLOT_WIDTH)
+        else:
+            st.pyplot(fig_threat, clear_figure=True, width=plot_width)
     with r2c2:
         fig_heat_threat = draw_threat_actions_heatmap(
             passes, carries, player_name, team_label, compact=compact,
         )
-        st.pyplot(fig_heat_threat, clear_figure=True, use_container_width=True)
+        if compact:
+            _render_map_pyplot(fig_heat_threat, width=MAPS_TAB_PLOT_WIDTH)
+        else:
+            st.pyplot(fig_heat_threat, clear_figure=True, width=plot_width)
 
 
 def _sync_player_analysis_selection(
@@ -4423,28 +4489,29 @@ def render_maps_section(
         st.warning("Could not build a profile for this player.")
         return
 
-    st.markdown('<div class="pa-maps-compact">', unsafe_allow_html=True)
-
-    passes_df = passes_by_player.get(player_id)
-    carries_df = carries_by_player.get(player_id)
-    has_actions = (
-        (passes_df is not None and not passes_df.empty)
-        or (carries_df is not None and not carries_df.empty)
-    )
-    if has_actions:
-        fig_origin = draw_action_origin_smooth_heatmap(
-            passes_df,
-            carries_df,
-            str(player.get("player_name", "")),
-            profile=False,
-            mini=True,
+    _, maps_col, _ = st.columns([0.55, 1.4, 0.55])
+    with maps_col:
+        passes_df = passes_by_player.get(player_id)
+        carries_df = carries_by_player.get(player_id)
+        has_actions = (
+            (passes_df is not None and not passes_df.empty)
+            or (carries_df is not None and not carries_df.empty)
         )
-        st.pyplot(fig_origin, clear_figure=True, use_container_width=True)
-    else:
-        st.info("Sem ações com coordenadas para este jogador.")
+        if has_actions:
+            oc1, oc2, oc3 = st.columns([0.2, 1, 0.2])
+            with oc2:
+                fig_origin = draw_action_origin_smooth_heatmap(
+                    passes_df,
+                    carries_df,
+                    str(player.get("player_name", "")),
+                    profile=False,
+                    mini=True,
+                )
+                _render_map_pyplot(fig_origin, width=MAPS_TAB_ORIGIN_WIDTH)
+        else:
+            st.info("Sem ações com coordenadas para este jogador.")
 
-    render_progression_maps_only(player, passes_df, carries_df, compact=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+        render_progression_maps_only(player, passes_df, carries_df, compact=True)
 
 
 def render_player_analysis_section(
