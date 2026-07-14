@@ -100,7 +100,6 @@ PLAYER_ANALYSIS_SELECT_KEY = "player_analysis_select"
 PLAYER_ANALYSIS_SHOW_MAPS_KEY = "pa_show_maps"
 PLAYER_ANALYSIS_SHOW_SIMILAR_KEY = "pa_show_similar"
 PLAYER_ANALYSIS_SIMILAR_PICK_KEY = "pa_similar_pick"
-PLAYER_ANALYSIS_VIEW_KEY = "pa_view_mode"
 PLAYER_ANALYSIS_POSITION_KEY = "pa_position_filter"
 PLAYER_ANALYSIS_POSITION_FILTERS: tuple[tuple[str, str], ...] = (
     ("Zagueiros", "centerbacks"),
@@ -1538,10 +1537,25 @@ st.markdown(
         display: flex;
         flex-direction: column;
         gap: 0;
-        flex: 1;
+        flex: 0 0 auto;
         min-height: 0;
-        overflow-y: auto;
-        justify-content: space-between;
+        overflow: hidden;
+    }
+    .pa-identity-card .pa-participation-compact {
+        gap: 0;
+        justify-content: flex-start;
+    }
+    .pa-identity-card .pa-part-row {
+        padding: 0.14rem 0;
+    }
+    .pa-identity-card .pa-part-label {
+        font-size: 0.76rem;
+    }
+    .pa-identity-card .pa-part-val {
+        font-size: 0.82rem;
+    }
+    .pa-identity-card .pa-section-label {
+        margin-bottom: 0.15rem;
     }
     .pa-part-row {
         display: flex;
@@ -1698,15 +1712,16 @@ st.markdown(
     }
     .pa-origin-heatmap-wrap {
         flex: 1;
-        min-height: 0;
+        min-height: 250px;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-top: 0.25rem;
+        margin-top: 0.15rem;
         overflow: hidden;
     }
     .pa-origin-heatmap {
-        width: 100%;
+        width: 108%;
+        max-width: 108%;
         max-height: 100%;
         object-fit: contain;
         border-radius: 8px;
@@ -2684,27 +2699,46 @@ def _player_analysis_rating_panel_html(player: dict, metric_ranks: dict) -> str:
     )
 
 
+def _section_metric_avg_rank_bar_html(player: dict, keys: tuple[str, ...]) -> str:
+    """Bar filled by the average display score of metrics inside a sub-card."""
+    metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
+    scores: list[float] = []
+    for key in keys:
+        info = metric_ranks.get(key)
+        if not info:
+            continue
+        rank = int(info.get("rank") or 0)
+        total = int(info.get("total") or 0)
+        if rank > 0 and total > 0:
+            scores.append(rank_to_display_score(rank, total))
+    if not scores:
+        return ""
+    avg_score = sum(scores) / len(scores)
+    color = score_display_color(avg_score)
+    width_pct = max(6.0, min(100.0, (avg_score - 3.0) / 6.0 * 100.0))
+    return (
+        f'<span class="rank-tip">'
+        f'<span class="rank-bar">'
+        f'<span class="rank-bar-fill" style="width:{width_pct:.0f}%;background:{color}"></span>'
+        f"</span>"
+        f'<span class="rank-tipbox">avg {avg_score:.1f}</span>'
+        f"</span>"
+    )
+
+
 def _section_grade_summary_bits(
     player: dict,
     section_key: str,
     title: str,
+    keys: tuple[str, ...] = (),
     *,
     rank_in_group_fn=rank_in_group_label,
     show_section_bar: bool = False,
 ) -> str:
-    _ = rank_in_group_fn
+    _ = (section_key, rank_in_group_fn)
     bar_html = ""
-    if show_section_bar:
-        section_rank_info = (
-            player.get("section_rating_ranks")
-            if isinstance(player.get("section_rating_ranks"), dict)
-            else {}
-        ).get(section_key)
-        if section_rank_info:
-            bar_html = _rank_bar_html(
-                int(section_rank_info["rank"]),
-                int(section_rank_info["total"]),
-            )
+    if show_section_bar and keys:
+        bar_html = _section_metric_avg_rank_bar_html(player, keys)
     title_row = (
         f'<div class="grade-card-title-row">'
         f'<div class="grade-card-title">{html.escape(title)}</div>'
@@ -2739,6 +2773,7 @@ def _section_grade_accordion_html(
         player,
         section_key,
         title,
+        keys,
         rank_in_group_fn=rank_in_group_fn,
         show_section_bar=show_section_bar,
     )
@@ -2941,10 +2976,7 @@ def _player_photo_html(player: dict) -> str:
 def _build_player_analysis_left_card_html(
     player: dict,
     *,
-    view_mode: str = "general",
     origin_heatmap_b64: str | None = None,
-    stat_keys: tuple[str, ...] = (),
-    section_label: str = "Traditional stats",
     label_fn,
     tooltip_fn,
     rank_in_group_fn,
@@ -2957,51 +2989,32 @@ def _build_player_analysis_left_card_html(
     badges_block = (
         f'<div class="pa-identity-badges">{badges}</div>' if badges else ""
     )
-    mode = str(view_mode or "general").strip().lower()
 
-    if mode == "general":
-        profile_lines = []
-        for key in pp.GENERAL_PROFILE_KEYS:
-            if key == "minutes":
-                value = _general_profile_minutes_html(player, fmt_pct_fn=fmt_pct_fn)
-            else:
-                value = _general_profile_value_html(player, key, fmt_pct_fn=fmt_pct_fn)
-            profile_lines.append(
-                _general_profile_row_html(pp.GENERAL_PROFILE_LABELS[key], value)
-            )
-        profile_html = "".join(profile_lines)
-        heatmap_block = ""
-        if origin_heatmap_b64:
-            heatmap_block = (
-                '<div class="pa-origin-heatmap-wrap">'
-                f'<img class="pa-origin-heatmap" src="data:image/png;base64,{origin_heatmap_b64}" '
-                'alt="Pass and carry origin heatmap" />'
-                "</div>"
-            )
-        body = (
-            '<p class="pa-section-label">General profile</p>'
-            f'<div class="pa-left-card-body">'
-            f'<div class="pa-participation-compact">{profile_html}</div>'
-            f"{heatmap_block}"
+    profile_lines = []
+    for key in pp.GENERAL_PROFILE_KEYS:
+        if key == "minutes":
+            value = _general_profile_minutes_html(player, fmt_pct_fn=fmt_pct_fn)
+        else:
+            value = _general_profile_value_html(player, key, fmt_pct_fn=fmt_pct_fn)
+        profile_lines.append(
+            _general_profile_row_html(pp.GENERAL_PROFILE_LABELS[key], value)
+        )
+    profile_html = "".join(profile_lines)
+    heatmap_block = ""
+    if origin_heatmap_b64:
+        heatmap_block = (
+            '<div class="pa-origin-heatmap-wrap">'
+            f'<img class="pa-origin-heatmap" src="data:image/png;base64,{origin_heatmap_b64}" '
+            'alt="Pass and carry origin heatmap" />'
             "</div>"
         )
-    else:
-        metric_ranks = player.get("metric_ranks") if isinstance(player.get("metric_ranks"), dict) else {}
-        stat_lines = "".join(
-            _participation_row_html(
-                label_fn(key),
-                key,
-                _stat_display(player, key, fmt_pct_fn=fmt_pct_fn, fmt_stat_fn=fmt_stat_fn),
-                metric_ranks,
-                label_fn=label_fn,
-                tooltip_fn=tooltip_fn,
-            )
-            for key in stat_keys
-        )
-        body = (
-            f'<p class="pa-section-label">{html.escape(section_label)}</p>'
-            f'<div class="pa-participation-compact">{stat_lines}</div>'
-        )
+    body = (
+        '<p class="pa-section-label">General profile</p>'
+        f'<div class="pa-left-card-body">'
+        f'<div class="pa-participation-compact">{profile_html}</div>'
+        f"{heatmap_block}"
+        "</div>"
+    )
 
     return (
         '<div class="player-card pa-identity-card">'
@@ -3028,17 +3041,12 @@ def _build_player_analysis_pillars_html(
     player: dict,
     scout_section_specs,
     *,
-    view_mode: str = "general",
     label_fn,
     tooltip_fn,
     rank_in_group_fn,
     fmt_pct_fn,
     fmt_stat_fn,
 ) -> str:
-    focus = str(view_mode or "general").strip().lower()
-    show_pass = focus in {"general", "pass"}
-    show_carry = focus in {"general", "carry"}
-
     def _accordions_for(sections: tuple, accordion_name: str | None = None) -> str:
         return "".join(
             _section_grade_accordion_html(
@@ -3047,7 +3055,7 @@ def _build_player_analysis_pillars_html(
                 title,
                 keys,
                 open=False,
-                show_section_bar=True,
+                show_section_bar=not str(section_key).endswith("distance"),
                 accordion_name=accordion_name,
                 label_fn=label_fn,
                 tooltip_fn=tooltip_fn,
@@ -3061,12 +3069,12 @@ def _build_player_analysis_pillars_html(
     pass_sections = tuple(s for s in scout_section_specs if str(s[0]).startswith("pass_"))
     carry_sections = tuple(s for s in scout_section_specs if str(s[0]).startswith("carry_"))
     groups = []
-    if pass_sections and show_pass:
+    if pass_sections:
         groups.append(
             '<p class="pa-pillar-group-label">Passing</p>'
             f'<div class="pa-pillar-group">{_accordions_for(pass_sections, "pa-pass-xstats")}</div>'
         )
-    if carry_sections and show_carry:
+    if carry_sections:
         groups.append(
             '<p class="pa-pillar-group-label">Carrying</p>'
             f'<div class="pa-pillar-group">{_accordions_for(carry_sections, "pa-carry-xstats")}</div>'
@@ -3079,10 +3087,7 @@ def _build_player_analysis_layout_html(
     *,
     scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
     pillar_labels: dict[str, str] | None = None,
-    view_mode: str = "general",
     origin_heatmap_b64: str | None = None,
-    stat_keys: tuple[str, ...] = (),
-    section_label: str = "Traditional stats",
     label_fn=pg_analyst_metric_label,
     tooltip_fn=pg_metric_tooltip,
     rank_in_group_fn=pg_rank_in_group_label,
@@ -3109,10 +3114,7 @@ def _build_player_analysis_layout_html(
     )
     left_card = _build_player_analysis_left_card_html(
         player,
-        view_mode=view_mode,
         origin_heatmap_b64=origin_heatmap_b64,
-        stat_keys=stat_keys,
-        section_label=section_label,
         label_fn=label_fn,
         tooltip_fn=tooltip_fn,
         rank_in_group_fn=rank_in_group_fn,
@@ -3122,7 +3124,6 @@ def _build_player_analysis_layout_html(
     pillar_html = _build_player_analysis_pillars_html(
         player,
         scout_section_specs,
-        view_mode=view_mode,
         label_fn=label_fn,
         tooltip_fn=tooltip_fn,
         rank_in_group_fn=rank_in_group_fn,
@@ -3882,53 +3883,27 @@ def render_player_analysis_section(
 
     st.markdown('<div class="pa-shell">', unsafe_allow_html=True)
 
-    view_label = st.radio(
-        "View",
-        options=["General Infos", "Passes", "Carries"],
-        horizontal=True,
-        key=PLAYER_ANALYSIS_VIEW_KEY,
-        label_visibility="visible",
-    )
-    view_mode = {
-        "General Infos": "general",
-        "Passes": "pass",
-        "Carries": "carry",
-    }[view_label]
-
     origin_heatmap_b64: str | None = None
-    if view_mode == "general":
-        passes_df = passes_by_player.get(player_id)
-        carries_df = carries_by_player.get(player_id)
-        has_actions = (
-            (passes_df is not None and not passes_df.empty)
-            or (carries_df is not None and not carries_df.empty)
+    passes_df = passes_by_player.get(player_id)
+    carries_df = carries_by_player.get(player_id)
+    has_actions = (
+        (passes_df is not None and not passes_df.empty)
+        or (carries_df is not None and not carries_df.empty)
+    )
+    if has_actions:
+        fig_origin = draw_action_origin_smooth_heatmap(
+            passes_df,
+            carries_df,
+            str(player.get("player_name", "")),
+            profile=True,
         )
-        if has_actions:
-            fig_origin = draw_action_origin_smooth_heatmap(
-                passes_df,
-                carries_df,
-                str(player.get("player_name", "")),
-                profile=True,
-            )
-            origin_heatmap_b64 = _fig_to_b64(fig_origin)
-
-    stat_keys: tuple[str, ...] = ()
-    section_label = "Traditional stats"
-    if view_mode == "pass":
-        stat_keys = pp.PASS_TRADITIONAL_PARTICIPATION_KEYS
-        section_label = "Traditional pass stats"
-    elif view_mode == "carry":
-        stat_keys = pp.CARRY_TRADITIONAL_PARTICIPATION_KEYS
-        section_label = "Traditional carry stats"
+        origin_heatmap_b64 = _fig_to_b64(fig_origin)
 
     render_player_analysis_profile(
         player,
         scout_section_specs=PROGRESSION_SCOUT_SECTION_SPECS,
         pillar_labels=_PROGRESSION_PILLAR_RADAR_LABELS,
-        view_mode=view_mode,
         origin_heatmap_b64=origin_heatmap_b64,
-        stat_keys=stat_keys,
-        section_label=section_label,
         label_fn=pg_analyst_metric_label,
         tooltip_fn=pg_metric_tooltip,
         rank_in_group_fn=pg_rank_in_group_label,

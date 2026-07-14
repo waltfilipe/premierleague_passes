@@ -82,6 +82,14 @@ PROGRESSION_SCOUT_SECTION_SPECS: tuple[tuple[str, str, str, tuple[str, ...]], ..
     for section_key, title, subtitle, keys in ce.SCOUT_SECTION_SPECS
 )
 
+PASS_DASHBOARD_METRIC_KEYS: tuple[str, ...] = tuple(
+    dict.fromkeys(
+        key
+        for _section_key, _title, _subtitle, keys in pe.SCOUT_SECTION_SPECS
+        for key in keys
+    )
+)
+
 PROGRESSION_PARTICIPATION_KEYS: tuple[str, ...] = (
     "minutes",
     "passes_completed",
@@ -561,6 +569,11 @@ def build_progression_dashboard_player(
         out["pass_rating"] = pass_player.get("pass_rating")
         out["pass_rating_confidence"] = pass_player.get("rating_confidence")
         out["pass_rating_percentile"] = pass_player.get("rating_percentile")
+        for key in PASS_DASHBOARD_METRIC_KEYS:
+            if pass_player.get(key) is not None:
+                out[key] = pass_player[key]
+        if pass_player.get("threat_pass_pct") is not None:
+            out["threat_pass_pct"] = pass_player["threat_pass_pct"]
     if carry_player:
         out["carry_rating"] = carry_player.get("pass_rating")
         out["carry_rating_confidence"] = carry_player.get("rating_confidence")

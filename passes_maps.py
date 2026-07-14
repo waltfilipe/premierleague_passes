@@ -591,8 +591,8 @@ def draw_action_origin_smooth_heatmap(
     from scipy.ndimage import gaussian_filter
 
     if profile:
-        figsize = (3.15, 2.15)
-        dpi = 200
+        figsize = (3.85, 2.65)
+        dpi = 220
     else:
         figsize = (FIG_W_COMPACT, FIG_H_COMPACT)
         dpi = FIG_DPI_COMPACT
