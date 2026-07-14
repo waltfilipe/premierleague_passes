@@ -16,6 +16,7 @@ ORIGIN_ANALYSIS_ROWS = 8
 MIN_PASSES_ORIGIN = 50
 MIN_ACTIONS_ORIGIN = MIN_PASSES_ORIGIN
 ORIGIN_PREFILTER_TOP_N = 50
+SIMILARITY_MIN_MINUTES_PCT = 0.30
 
 # Option A — percentile profile (pass + carry metric groups).
 SIMILARITY_PASS_METRICS: tuple[str, ...] = (
@@ -26,8 +27,6 @@ SIMILARITY_PASS_METRICS: tuple[str, ...] = (
     "phi_per_pass",
     "positive_dxt_pct",
     "dxt_gt_01_pct",
-    "long_impact_passes",
-    "long_impact_per_long_pass",
     "construction_aip_p90",
     "construction_aip_per_pass",
     "aggression_aip_p90",
@@ -62,7 +61,6 @@ SIMILARITY_COMPARE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "Pass Effectivness",
         ("impact_per_pass", "phi_per_pass", "positive_dxt_pct", "dxt_gt_01_pct"),
     ),
-    ("Long Balls", ("long_impact_passes", "long_impact_per_long_pass")),
     ("Build-Up", ("construction_aip_p90", "construction_aip_per_pass")),
     ("Attacking Zone", ("aggression_aip_p90", "aggression_aip_per_pass")),
     (
@@ -92,8 +90,6 @@ SIMILARITY_WEIGHTS_C: dict[str, float] = {
     "positive_dxt_pct": 1.5,
     "phi_per_pass": 1.5,
     "dxt_gt_01_pct": 1.0,
-    "long_impact_passes": 1.0,
-    "long_impact_per_long_pass": 1.0,
     "construction_aip_p90": 1.0,
     "construction_aip_per_pass": 1.0,
     "aggression_aip_p90": 1.0,
@@ -116,8 +112,6 @@ SIMILARITY_METRIC_LABELS: dict[str, str] = {
     "phi_per_pass": "Average High Threat Passes",
     "positive_dxt_pct": "% Passes with Positive ΔxT",
     "dxt_gt_01_pct": "% High Threat Passes",
-    "long_impact_passes": "Impact Long Balls",
-    "long_impact_per_long_pass": "Average Impact",
     "construction_aip_p90": "Build-Up Impact Passes (Per game)",
     "construction_aip_per_pass": "Build-Up Threat (Per pass)",
     "aggression_aip_p90": "Attacking Impact Passes (Per game)",
@@ -743,6 +737,12 @@ def group_players_by_detailed_position(players: list[dict]) -> dict[str, list[di
     return group_players_by_similarity_position(players)
 
 
+def meets_similarity_minutes(player: dict) -> bool:
+    """True when the player logged at least 30% of team competition minutes."""
+    minutes_pct = player.get("minutes_pct")
+    return minutes_pct is not None and float(minutes_pct) >= SIMILARITY_MIN_MINUTES_PCT
+
+
 def similarity_search_pool(
     players_by_position: dict[str, list[dict]],
     position: str | None,
@@ -750,7 +750,11 @@ def similarity_search_pool(
     if not position:
         return []
     key = str(position).strip()
-    return list(players_by_position.get(key, []))
+    return [
+        player
+        for player in players_by_position.get(key, [])
+        if meets_similarity_minutes(player)
+    ]
 
 
 def group_players_by_similarity_position(players: list[dict]) -> dict[str, list[dict]]:

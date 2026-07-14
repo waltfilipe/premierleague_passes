@@ -3712,7 +3712,8 @@ def _render_player_analysis_similarity(
 
     st.markdown(
         f'<p class="pa-similar-caption">Top {SIMILARITY_TOP_K} Serie A players in '
-        f"<strong>{html.escape(pool_label)}</strong> ({len(pool)} eligible). "
+        f"<strong>{html.escape(pool_label)}</strong> ({len(pool)} eligible, "
+        f"≥{int(sim.SIMILARITY_MIN_MINUTES_PCT * 100)}% minutes). "
         "Ranked by xStats (xT metrics); Stats p90 compares traditional volume; "
         "Origin reflects shared start locations. Click a row to compare.</p>",
         unsafe_allow_html=True,
