@@ -57,7 +57,7 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 59
+DATA_CACHE_VERSION = 60
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
@@ -91,7 +91,8 @@ PENALTY_BOX_Y_MIN = 18.0
 PENALTY_BOX_Y_MAX = 62.0
 GOAL_X, GOAL_Y = 120.0, 40.0
 WYSCOUT_PITCH_SIZE = 100.0
-PASS_AGGRESSION_X_MIN = FIELD_X - 30.0
+PASS_BUILDUP_FIELD_SHARE = 0.8
+PASS_AGGRESSION_X_MIN = FIELD_X * PASS_BUILDUP_FIELD_SHARE
 LONG_PASS_MIN_DISTANCE_M = 30.0
 DISTANCE_SHORT_MAX_M = 12.0
 DISTANCE_MEDIUM_MAX_M = 25.0
@@ -247,8 +248,8 @@ METRIC_TOOLTIPS: dict[str, str] = {
     "dist_long_impact_p90": "Threat passes per 90 on completed passes of 25 m or more.",
     "long_impact_passes": "Long balls that generated threat in the xT model.",
     "long_impact_per_long_pass": "Average ΔxT generated per successful impact long ball.",
-    "construction_aip_p90": "Build-up impact passes per 90 minutes.",
-    "aggression_aip_p90": "Attacking impact passes per 90 minutes.",
+    "construction_aip_p90": "Build-up impact passes per 90 (pass ends in the first 80% of the pitch).",
+    "aggression_aip_p90": "Attacking impact passes per 90 (pass ends in the final 20% of the pitch).",
     "minutes": "Minutes played in the analyzed sample.",
     "passes_completed": "Total completed passes.",
     "minutes_pct": "Player minutes relative to the position leader.",
