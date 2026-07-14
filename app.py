@@ -162,9 +162,7 @@ TRADITIONAL_PARTICIPATION_KEYS = getattr(
     "TRADITIONAL_PARTICIPATION_KEYS",
     (
         "passes_total",
-        "pass_completion_pct",
         "long_balls",
-        "long_ball_completion_pct",
         "progressive_passes",
         "final_third_passes",
         "passes_to_box",
@@ -1474,6 +1472,23 @@ st.markdown(
         font-weight: 600;
         margin-left: 0.25rem;
     }
+    .pa-viz-toggle-wrap {
+        margin-top: 0.35rem;
+        margin-bottom: 0.15rem;
+    }
+    .pa-viz-toggle-wrap [data-testid="stRadio"] {
+        margin-bottom: 0 !important;
+    }
+    .pa-viz-toggle-wrap [data-testid="stRadio"] > label {
+        display: none;
+    }
+    .pa-viz-toggle-wrap [data-testid="stRadio"] > div {
+        gap: 0.35rem !important;
+    }
+    .pa-viz-toggle-wrap [data-testid="stRadio"] label p {
+        font-size: 0.72rem !important;
+        color: #94a3b8 !important;
+    }
     .pa-identity-card {
         padding: 0.9rem 1rem 0.8rem;
         margin-bottom: 0;
@@ -1668,12 +1683,6 @@ st.markdown(
         min-width: 2.7rem;
         padding: 0.32rem 0.45rem;
         font-size: 0.92rem;
-    }
-        font-size: 1.35rem !important;
-        font-weight: 800 !important;
-        padding: 0.38rem 0.7rem !important;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
     }
     .pa-rating-block-overall .rating-box {
         min-width: 3.85rem;
@@ -2801,7 +2810,8 @@ def _section_grade_accordion_html(
     keys: tuple[str, ...],
     *,
     open: bool = False,
-    show_section_bar: bool = False,
+    show_section_bar: bool = True,
+    accordion_name: str | None = None,
     label_fn=analyst_metric_label,
     tooltip_fn=metric_tooltip,
     rank_in_group_fn=rank_in_group_label,
@@ -2825,8 +2835,9 @@ def _section_grade_accordion_html(
         fmt_stat_fn=fmt_stat_fn,
     )
     open_attr = " open" if open else ""
+    name_attr = f' name="{html.escape(accordion_name)}"' if accordion_name else ""
     return (
-        f'<details class="grade-accordion"{open_attr}>'
+        f'<details class="grade-accordion"{name_attr}{open_attr}>'
         "<summary>"
         '<i class="fa-solid fa-chevron-right grade-arrow" aria-hidden="true"></i>'
         f"{summary_main}"
@@ -3010,12 +3021,9 @@ def _player_photo_html(player: dict) -> str:
     return f'<div class="pa-identity-photo-placeholder">{html.escape(initials or "?")}</div>'
 
 
-def _build_player_analysis_left_card_html(
+def _build_player_analysis_identity_shell_html(
     player: dict,
     *,
-    profile_viz: str = "heatmap",
-    origin_heatmap_b64: str | None = None,
-    pillar_profile_html: str = "",
     label_fn,
     tooltip_fn,
     rank_in_group_fn,
@@ -3040,26 +3048,6 @@ def _build_player_analysis_left_card_html(
         )
     profile_html = "".join(profile_lines)
 
-    viz_mode = str(profile_viz or "heatmap").strip().lower()
-    viz_block = ""
-    if viz_mode == "pillar" and pillar_profile_html:
-        viz_block = f'<div class="pa-profile-radar-wrap">{pillar_profile_html}</div>'
-    elif origin_heatmap_b64:
-        viz_block = (
-            '<div class="pa-origin-heatmap-wrap">'
-            f'<img class="pa-origin-heatmap" src="data:image/png;base64,{origin_heatmap_b64}" '
-            'alt="Pass and carry origin heatmap" />'
-            "</div>"
-        )
-
-    body = (
-        '<p class="pa-section-label">General profile</p>'
-        f'<div class="pa-left-card-body">'
-        f'<div class="pa-participation-compact">{profile_html}</div>'
-        f"{viz_block}"
-        "</div>"
-    )
-
     return (
         '<div class="player-card pa-identity-card">'
         '<div class="pa-identity-top">'
@@ -3076,9 +3064,57 @@ def _build_player_analysis_left_card_html(
         "</div>"
         "</div>"
         '<div class="pa-identity-divider"></div>'
-        f"{body}"
-        "</div>"
+        '<p class="pa-section-label">General profile</p>'
+        f'<div class="pa-left-card-body">'
+        f'<div class="pa-participation-compact">{profile_html}</div>'
     )
+
+
+def _build_player_analysis_profile_viz_html(
+    *,
+    profile_viz: str = "heatmap",
+    origin_heatmap_b64: str | None = None,
+    pillar_profile_html: str = "",
+) -> str:
+    viz_mode = str(profile_viz or "heatmap").strip().lower()
+    if viz_mode == "pillar" and pillar_profile_html:
+        return f'<div class="pa-profile-radar-wrap">{pillar_profile_html}</div>'
+    if origin_heatmap_b64:
+        return (
+            '<div class="pa-origin-heatmap-wrap">'
+            f'<img class="pa-origin-heatmap" src="data:image/png;base64,{origin_heatmap_b64}" '
+            'alt="Pass and carry origin heatmap" />'
+            "</div>"
+        )
+    return ""
+
+
+def _build_player_analysis_left_card_html(
+    player: dict,
+    *,
+    profile_viz: str = "heatmap",
+    origin_heatmap_b64: str | None = None,
+    pillar_profile_html: str = "",
+    label_fn,
+    tooltip_fn,
+    rank_in_group_fn,
+    fmt_pct_fn,
+    fmt_stat_fn,
+) -> str:
+    shell = _build_player_analysis_identity_shell_html(
+        player,
+        label_fn=label_fn,
+        tooltip_fn=tooltip_fn,
+        rank_in_group_fn=rank_in_group_fn,
+        fmt_pct_fn=fmt_pct_fn,
+        fmt_stat_fn=fmt_stat_fn,
+    )
+    viz_block = _build_player_analysis_profile_viz_html(
+        profile_viz=profile_viz,
+        origin_heatmap_b64=origin_heatmap_b64,
+        pillar_profile_html=pillar_profile_html,
+    )
+    return f"{shell}{viz_block}</div></div>"
 
 
 def _build_player_analysis_stat_column_html(
@@ -3087,6 +3123,7 @@ def _build_player_analysis_stat_column_html(
     title: str,
     stat_keys: tuple[str, ...],
     scout_section_specs: tuple,
+    accordion_name: str,
     label_fn,
     tooltip_fn,
     rank_in_group_fn,
@@ -3112,7 +3149,8 @@ def _build_player_analysis_stat_column_html(
             section_title,
             keys,
             open=False,
-            show_section_bar=section_key.endswith("risk_pass"),
+            show_section_bar=True,
+            accordion_name=accordion_name,
             label_fn=label_fn,
             tooltip_fn=tooltip_fn,
             rank_in_group_fn=rank_in_group_fn,
@@ -3228,6 +3266,7 @@ def _build_player_analysis_layout_parts(
         title="Passing",
         stat_keys=pass_stat_keys,
         scout_section_specs=pass_sections,
+        accordion_name="pa-pass-xstats",
         label_fn=label_fn,
         tooltip_fn=tooltip_fn,
         rank_in_group_fn=rank_in_group_fn,
@@ -3239,6 +3278,7 @@ def _build_player_analysis_layout_parts(
         title="Carries",
         stat_keys=carry_stat_keys,
         scout_section_specs=carry_sections,
+        accordion_name="pa-carry-xstats",
         label_fn=label_fn,
         tooltip_fn=tooltip_fn,
         rank_in_group_fn=rank_in_group_fn,
@@ -3268,7 +3308,29 @@ def render_player_analysis_profile(player: dict, **kwargs) -> None:
     col_identity, col_score, col_pass, col_carry = st.columns(
         [0.92, 0.42, 1.0, 1.0], gap="small",
     )
+
+    label_fn = kwargs.get("label_fn", pg_analyst_metric_label)
+    tooltip_fn = kwargs.get("tooltip_fn", pg_metric_tooltip)
+    rank_in_group_fn = kwargs.get("rank_in_group_fn", pg_rank_in_group_label)
+    fmt_pct_fn = kwargs.get("fmt_pct_fn", pg_fmt_pct)
+    fmt_stat_fn = kwargs.get("fmt_stat_fn", pg_fmt_stat_value)
+
+    identity_shell = _build_player_analysis_identity_shell_html(
+        player,
+        label_fn=label_fn,
+        tooltip_fn=tooltip_fn,
+        rank_in_group_fn=rank_in_group_fn,
+        fmt_pct_fn=fmt_pct_fn,
+        fmt_stat_fn=fmt_stat_fn,
+    )
+
+    profile_viz = "heatmap"
     with col_identity:
+        st.markdown(
+            f'<div class="player-card pa-identity-card" style="{layout_style}">{identity_shell}',
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div class="pa-viz-toggle-wrap">', unsafe_allow_html=True)
         profile_viz_label = st.radio(
             "Profile view",
             options=["Origin heatmap", "Pillar profile"],
@@ -3276,17 +3338,39 @@ def render_player_analysis_profile(player: dict, **kwargs) -> None:
             key=PLAYER_ANALYSIS_PROFILE_VIZ_KEY,
             label_visibility="collapsed",
         )
-    profile_viz = "pillar" if profile_viz_label == "Pillar profile" else "heatmap"
-    left_card, rating_panel, pass_column, carry_column = _build_player_analysis_layout_parts(
+        st.markdown("</div>", unsafe_allow_html=True)
+        profile_viz = "pillar" if profile_viz_label == "Pillar profile" else "heatmap"
+
+        scout_section_specs = kwargs.get("scout_section_specs", PROGRESSION_SCOUT_SECTION_SPECS)
+        pillar_labels = kwargs.get("pillar_labels", _PROGRESSION_PILLAR_RADAR_LABELS)
+        pillar_profile_html = ""
+        if profile_viz == "pillar":
+            radar_specs = _progression_radar_section_specs(scout_section_specs)
+            pillar_profile_html = _pillar_radar_inner_html(
+                player,
+                scout_section_specs=radar_specs,
+                pillar_labels=pillar_labels,
+                confidence_minutes=kwargs.get("confidence_minutes", RATING_CONFIDENCE_MINUTES),
+                confidence_passes=kwargs.get("confidence_passes", RATING_CONFIDENCE_PASSES),
+                radar_figsize=(3.8, 3.8),
+                line_color=PA_RADAR_PASS_COLOR,
+                fill_color=PA_RADAR_FILL_NEUTRAL,
+            )
+        viz_html = _build_player_analysis_profile_viz_html(
+            profile_viz=profile_viz,
+            origin_heatmap_b64=kwargs.get("origin_heatmap_b64"),
+            pillar_profile_html=pillar_profile_html,
+        )
+        st.markdown(
+            f"{viz_html}</div></div>",
+            unsafe_allow_html=True,
+        )
+
+    _left_card, rating_panel, pass_column, carry_column = _build_player_analysis_layout_parts(
         player,
         profile_viz=profile_viz,
         **kwargs,
     )
-    with col_identity:
-        st.markdown(
-            f'<div style="{layout_style}">{left_card}</div>',
-            unsafe_allow_html=True,
-        )
     with col_score:
         st.markdown(
             f'<div style="{layout_style}">{rating_panel}</div>',

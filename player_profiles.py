@@ -28,9 +28,7 @@ GENERAL_PROFILE_KEYS: tuple[str, ...] = tuple(GENERAL_PROFILE_LABELS.keys())
 
 PASS_TRADITIONAL_PARTICIPATION_KEYS: tuple[str, ...] = (
     "passes_total",
-    "pass_completion_pct",
     "long_balls",
-    "long_ball_completion_pct",
     "progressive_passes",
     "final_third_passes",
     "passes_to_box",

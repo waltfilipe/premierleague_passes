@@ -112,7 +112,7 @@ SIMILARITY_METRIC_LABELS: dict[str, str] = {
     "impact_per_pass": "Average Pass Threat",
     "risk_passes_p90": "Risk Passes",
     "threat_pass_pct": "Threat Pass Rate",
-    "positive_dxt_pct": "% Passes with Positive ΔxT (+0.5)",
+    "positive_dxt_pct": "% Passes with Positive ΔxT (+0.15)",
     "dist_short_impact_p90": "< 12 m",
     "dist_medium_impact_p90": "12–25 m",
     "dist_long_impact_p90": "≥ 25 m",

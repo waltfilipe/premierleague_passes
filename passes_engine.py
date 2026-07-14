@@ -57,7 +57,7 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 56
+DATA_CACHE_VERSION = 57
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
@@ -99,8 +99,8 @@ KICKOFF_RESTART_RADIUS_M = 4.0
 CORNER_CROSS_RADIUS_M = 10.0
 CORNER_PASS_RADIUS_M = 6.0
 DXT_IMPACT_THRESHOLD = 0.15
-POSITIVE_DXT_THRESHOLD = 0.5
-RISK_PASS_DXT_THRESHOLD = 0.5
+POSITIVE_DXT_THRESHOLD = 0.15
+RISK_PASS_DXT_THRESHOLD = 0.25
 DEFAULT_PLAYER_POSITION = "CM"
 
 WYSCOUT_PROG_OWN_HALF = 30.0
@@ -196,7 +196,7 @@ METRIC_LABELS: dict[str, str] = {
     "phi_p90": "High Threat Passes p90",
     "phi_per_pass": "Avg High Threat Passes",
     "dxt_p90": "Pass Threat p90",
-    "positive_dxt_pct": "% Passes with Positive ΔxT",
+    "positive_dxt_pct": "% Passes with Positive ΔxT (+0.15)",
     "dxt_gt_01_pct": "% High Threat Passes",
     "construction_aip": "Build-Up Impact Passes",
     "construction_aip_p90": "Build-Up Impact Passes (Per game)",
@@ -217,7 +217,7 @@ ANALYST_METRIC_LABELS: dict[str, str] = {
     "impact_per_pass": "Average Pass Threat",
     "risk_passes_p90": "Risk Passes",
     "threat_pass_pct": "Threat Pass Rate",
-    "positive_dxt_pct": "% Passes with Positive ΔxT (+0.5)",
+    "positive_dxt_pct": "% Passes with Positive ΔxT (+0.15)",
     "dxt_gt_01_pct": "% High Threat Passes",
     "dist_short_impact_p90": "< 12 m",
     "dist_medium_impact_p90": "12–25 m",
@@ -236,9 +236,9 @@ ANALYST_METRIC_LABELS: dict[str, str] = {
 METRIC_TOOLTIPS: dict[str, str] = {
     "impact_passes_p90": "Threat passes per 90 minutes.",
     "impact_per_pass": "Average ΔxT generated per successful threat pass.",
-    "risk_passes_p90": "Passes with ΔxT ≥ 0.5 per 90 minutes.",
+    "risk_passes_p90": "Passes with ΔxT ≥ 0.25 per 90 minutes.",
     "threat_pass_pct": "Share of all passes that are classified as threat passes.",
-    "positive_dxt_pct": "Share of passes with ΔxT above +0.5.",
+    "positive_dxt_pct": "Share of passes with ΔxT above +0.15.",
     "dxt_gt_01_pct": "Share of passes with ΔxT above 0.15 (high threat passes).",
     "dist_short_impact_p90": "Threat passes per 90 on completed passes under 12 m.",
     "dist_medium_impact_p90": "Threat passes per 90 on completed passes from 12 m to under 25 m.",
