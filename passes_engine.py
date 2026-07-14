@@ -57,7 +57,7 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 51
+DATA_CACHE_VERSION = 52
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
@@ -839,8 +839,8 @@ def build_serie_a_players(
         if grp is None:
             continue
         pid = player["code"]
-        grp_passes = passes[passes["player_id"] == pid]
-        if len(grp_passes) < min_passes:
+        grp_passes = filter_live_ball_passes(passes[passes["player_id"] == pid])
+        if grp_passes is None or grp_passes.empty or len(grp_passes) < min_passes:
             continue
         mins = minutes_info.get(pid, {})
         metrics = compute_player_metrics(grp_passes, mins)
@@ -1197,7 +1197,10 @@ def _long_ball_stats(passes: pd.DataFrame) -> dict:
 
 
 def compute_player_metrics(passes: pd.DataFrame, minutes_info: dict) -> dict:
-    stats = {**_pass_layer_metrics(passes), **_long_ball_stats(passes)}
+    live_passes = filter_live_ball_passes(passes)
+    if live_passes is None or live_passes.empty:
+        live_passes = passes.iloc[0:0]
+    stats = {**_pass_layer_metrics(live_passes), **_long_ball_stats(live_passes)}
     passes_total = stats.get("passes_total") or 0
     passes_completed = stats.get("passes_completed") or 0
     stats["pass_completion_pct"] = (
