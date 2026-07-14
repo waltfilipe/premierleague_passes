@@ -261,9 +261,13 @@ def pass_origin_profile(
     completed_only: bool = True,
 ) -> np.ndarray | None:
     """Normalized histogram of pass start locations (StatsBomb coords)."""
+    from passes_engine import filter_live_ball_passes
+
     if passes is None or passes.empty:
         return None
-    work = passes
+    work = filter_live_ball_passes(passes)
+    if work is None or work.empty:
+        return None
     if completed_only and "is_won" in work.columns:
         work = work[work["is_won"].astype(bool)]
     if work.empty or "x_start" not in work.columns or "y_start" not in work.columns:
@@ -325,11 +329,16 @@ def _cosine_similarity_pct(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _completed_pass_count(passes: pd.DataFrame | None) -> int:
+    from passes_engine import filter_live_ball_passes
+
     if passes is None or passes.empty:
         return 0
-    if "is_won" in passes.columns:
-        return int(passes["is_won"].astype(bool).sum())
-    return int(len(passes))
+    work = filter_live_ball_passes(passes)
+    if work is None or work.empty:
+        return 0
+    if "is_won" in work.columns:
+        return int(work["is_won"].astype(bool).sum())
+    return int(len(work))
 
 
 def _completed_carry_count(carries: pd.DataFrame | None) -> int:

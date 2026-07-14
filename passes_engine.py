@@ -57,7 +57,7 @@ SEASON_ALL_CSV_PATH = Path(__file__).resolve().parent / "season_all_serieb.csv"
 SEASON_ALL_BR_CSV_PATH = Path(__file__).resolve().parent / "season_all_br.csv"
 SEASON_ALL_BR_FULL_CSV_PATH = Path(__file__).resolve().parent / "season_all_brfull.csv"
 PLAYER_MATCH_STATS_PATH = Path(__file__).resolve().parent / "player_match_stats.csv"
-DATA_CACHE_VERSION = 50
+DATA_CACHE_VERSION = 51
 
 MIN_MINUTES_PCT = 0.30
 RATING_MIN_MINUTES_PCT = 0.30
@@ -93,6 +93,9 @@ GOAL_X, GOAL_Y = 120.0, 40.0
 WYSCOUT_PITCH_SIZE = 100.0
 PASS_AGGRESSION_X_MIN = FIELD_X - 30.0
 LONG_PASS_MIN_DISTANCE_M = 30.0
+KICKOFF_RESTART_RADIUS_M = 4.0
+CORNER_CROSS_RADIUS_M = 10.0
+CORNER_PASS_RADIUS_M = 6.0
 DXT_IMPACT_THRESHOLD = 0.15
 DEFAULT_PLAYER_POSITION = "CM"
 
@@ -613,6 +616,50 @@ def _wyscout_to_sb(x: pd.Series, y: pd.Series) -> tuple[np.ndarray, np.ndarray]:
     return x_sb, y_sb
 
 
+def _nearest_corner_distance_vec(x_start: np.ndarray, y_start: np.ndarray) -> np.ndarray:
+    corners_x = np.array([0.0, 0.0, FIELD_X, FIELD_X], dtype=float)
+    corners_y = np.array([0.0, FIELD_Y, 0.0, FIELD_Y], dtype=float)
+    dx = x_start[:, None] - corners_x[None, :]
+    dy = y_start[:, None] - corners_y[None, :]
+    return np.sqrt(dx * dx + dy * dy).min(axis=1)
+
+
+def _restart_pass_mask(
+    x_start: np.ndarray,
+    y_start: np.ndarray,
+    action_type: np.ndarray,
+) -> np.ndarray:
+    """Kickoff spot restarts and corner-kick actions (not open-play ball."""
+    center_dist = np.sqrt((x_start - HALF_LINE_X) ** 2 + (y_start - FIELD_Y / 2.0) ** 2)
+    kickoff = center_dist <= KICKOFF_RESTART_RADIUS_M
+    corner_dist = _nearest_corner_distance_vec(x_start, y_start)
+    action = np.char.lower(np.asarray(action_type, dtype=str))
+    corner_cross = (action == "cross") & (corner_dist <= CORNER_CROSS_RADIUS_M)
+    corner_pass = (action == "pass") & (corner_dist <= CORNER_PASS_RADIUS_M)
+    return kickoff | corner_cross | corner_pass
+
+
+def filter_live_ball_passes(passes: pd.DataFrame | None) -> pd.DataFrame | None:
+    """Drop kickoff and corner-kick passes — keep only open-play origins."""
+    if passes is None or passes.empty:
+        return passes
+    if "is_restart" in passes.columns:
+        return passes.loc[~passes["is_restart"].astype(bool)]
+    if "x_start" not in passes.columns or "y_start" not in passes.columns:
+        return passes
+    action = (
+        passes["action_type"].astype(str).to_numpy()
+        if "action_type" in passes.columns
+        else np.full(len(passes), "pass", dtype=str)
+    )
+    mask = _restart_pass_mask(
+        passes["x_start"].to_numpy(dtype=float),
+        passes["y_start"].to_numpy(dtype=float),
+        action,
+    )
+    return passes.loc[~mask]
+
+
 def _normalize_position(raw: str | None) -> str:
     return normalize_sofascore_position(raw, default=DEFAULT_PLAYER_POSITION)
 
@@ -929,6 +976,11 @@ def _enrich_passes(
     out["impact_success"] = out["is_won"] & out["impact_attempt"]
     out["high_impact_success"] = out["is_won"] & out["high_impact_attempt"]
     out["prog_success"] = out["is_success"] & out["is_progressive_wyscout"]
+    out["is_restart"] = _restart_pass_mask(
+        out["x_start"].to_numpy(dtype=float),
+        out["y_start"].to_numpy(dtype=float),
+        out["action_type"].astype(str).to_numpy(),
+    )
     return out
 
 

@@ -12,6 +12,8 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import FancyArrowPatch, Rectangle
 from mplsoccer import Pitch
 
+from passes_engine import filter_live_ball_passes
+
 FIG_W, FIG_H = 7.2, 4.8
 FIG_DPI = 220
 FIG_W_COMPACT, FIG_H_COMPACT = 6.8, 4.5
@@ -502,7 +504,9 @@ def draw_action_origin_heatmap(
     def _accumulate(frame, *, won_only: bool) -> None:
         if frame is None or frame.empty:
             return
-        work = frame
+        work = filter_live_ball_passes(frame)
+        if work is None or work.empty:
+            return
         if won_only and "is_won" in work.columns:
             work = work[work["is_won"].astype(bool)]
         if work.empty or "x_start" not in work.columns or "y_start" not in work.columns:
@@ -604,7 +608,9 @@ def draw_action_origin_smooth_heatmap(
         nonlocal density
         if frame is None or frame.empty:
             return
-        work = frame
+        work = filter_live_ball_passes(frame)
+        if work is None or work.empty:
+            return
         if won_only and "is_won" in work.columns:
             work = work[work["is_won"].astype(bool)]
         if work.empty or "x_start" not in work.columns or "y_start" not in work.columns:
