@@ -1710,50 +1710,53 @@ st.markdown(
         align-items: flex-start;
         margin-bottom: 0.85rem;
     }
-    .pa-position-slicer {
-        width: 100%;
-        margin-bottom: 0.15rem;
+    .pa-position-slicer-marker {
+        display: none;
     }
-    .pa-position-grid {
-        display: grid;
-        grid-template-columns: repeat(7, minmax(0, 1fr));
+    [data-testid="stVerticalBlock"]:has(.pa-position-slicer-marker) .pa-position-block-label {
+        width: 100%;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #8fa3bf;
+        margin: 0 0 0.35rem 0;
+    }
+    [data-testid="stVerticalBlock"]:has(.pa-position-slicer-marker) [data-testid="stHorizontalBlock"] {
         gap: 0.35rem;
+        align-items: stretch;
+    }
+    [data-testid="stVerticalBlock"]:has(.pa-position-slicer-marker) [data-testid="column"] {
+        min-width: 0;
+    }
+    [data-testid="stVerticalBlock"]:has(.pa-position-slicer-marker) [data-testid="stButton"] {
         width: 100%;
     }
-    @media (max-width: 1100px) {
-        .pa-position-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    }
-    @media (max-width: 700px) {
-        .pa-position-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    .pa-pos-chip {
-        display: flex;
-        align-items: center;
-        justify-content: center;
+    [data-testid="stVerticalBlock"]:has(.pa-position-slicer-marker) [data-testid="stButton"] button {
+        width: 100%;
         min-height: 2.85rem;
         max-height: 2.85rem;
         padding: 0.3rem 0.25rem;
         font-size: 0.62rem;
         font-weight: 700;
         line-height: 1.12;
-        text-align: center;
-        text-decoration: none;
-        background: linear-gradient(160deg, #151b2b 0%, #101522 100%);
-        border: 1px solid #2a3550;
-        color: #93c5fd;
-        border-radius: 10px;
-        box-sizing: border-box;
-        transition: border-color 0.15s ease, color 0.15s ease;
+        white-space: normal;
+        background: linear-gradient(160deg, #151b2b 0%, #101522 100%) !important;
+        border: 1px solid #2a3550 !important;
+        color: #93c5fd !important;
+        border-radius: 10px !important;
+        box-shadow: none !important;
     }
-    .pa-pos-chip:hover {
-        border-color: #3b82f6;
-        color: #dbeafe;
+    [data-testid="stVerticalBlock"]:has(.pa-position-slicer-marker) [data-testid="stButton"] button:hover {
+        border-color: #3b82f6 !important;
+        color: #dbeafe !important;
     }
-    .pa-pos-chip-on {
-        background: linear-gradient(160deg, #1e3a5f 0%, #172554 100%);
-        border-color: #3b82f6;
-        color: #dbeafe;
-        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.22);
+    [data-testid="stVerticalBlock"]:has(.pa-position-slicer-marker) [data-testid="stButton"] button[kind="primary"],
+    [data-testid="stVerticalBlock"]:has(.pa-position-slicer-marker) [data-testid="stButton"] button[data-testid="baseButton-primary"] {
+        background: linear-gradient(160deg, #1e3a5f 0%, #172554 100%) !important;
+        border-color: #3b82f6 !important;
+        color: #dbeafe !important;
+        box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.22) !important;
     }
     .pa-position-block-label {
         width: 100%;
@@ -2535,72 +2538,42 @@ def _position_blocks_for_player(player: dict) -> set[str]:
     return {PLAYER_ANALYSIS_POSITION_BLOCKS[0][0]}
 
 
-def _apply_position_block_toggle_from_query() -> None:
-    block_id = st.query_params.get("pos_toggle")
-    if not block_id:
+def _clear_stale_position_toggle_query() -> None:
+    if st.query_params.get("pos_toggle") is None:
         return
-    block_id = str(block_id)
-    if block_id not in PLAYER_POSITION_BLOCK_BY_ID:
-        try:
-            del st.query_params["pos_toggle"]
-        except Exception:
-            pass
-        return
-
-    state_key = PLAYER_ANALYSIS_POSITION_BLOCKS_KEY
-    selected = set(
-        st.session_state.get(
-            state_key,
-            {bid for bid, _, _ in PLAYER_ANALYSIS_POSITION_BLOCKS},
-        )
-    )
-    if block_id in selected and len(selected) > 1:
-        selected.discard(block_id)
-    elif block_id not in selected:
-        selected.add(block_id)
-    st.session_state[state_key] = selected
-    st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
-    _clear_player_select_widgets()
-    st.session_state.pop(PLAYER_ANALYSIS_COMPARE_KEY, None)
     try:
         del st.query_params["pos_toggle"]
     except Exception:
         pass
-    st.rerun()
-
-
-def _position_blocks_html(selected: set[str]) -> str:
-    from urllib.parse import urlencode
-
-    chips: list[str] = []
-    for block_id, label, _codes in PLAYER_ANALYSIS_POSITION_BLOCKS:
-        is_on = block_id in selected
-        chip_cls = "pa-pos-chip pa-pos-chip-on" if is_on else "pa-pos-chip"
-        params = {k: v for k, v in st.query_params.items() if k != "pos_toggle"}
-        params["pos_toggle"] = block_id
-        href = "?" + urlencode(params, doseq=True)
-        chips.append(
-            f'<a class="{chip_cls}" href="{html.escape(href, quote=True)}">'
-            f"{html.escape(label)}</a>"
-        )
-    return (
-        '<div class="pa-position-slicer">'
-        '<p class="pa-position-block-label">Posição</p>'
-        f'<div class="pa-position-grid">{"".join(chips)}</div>'
-        "</div>"
-    )
 
 
 def _render_position_block_slicer(*, key_prefix: str = "pa") -> frozenset[str]:
-    _ = key_prefix
-    _apply_position_block_toggle_from_query()
-
     state_key = PLAYER_ANALYSIS_POSITION_BLOCKS_KEY
     if state_key not in st.session_state:
         st.session_state[state_key] = {block_id for block_id, _, _ in PLAYER_ANALYSIS_POSITION_BLOCKS}
 
     selected: set[str] = set(st.session_state[state_key])
-    st.html(_position_blocks_html(selected), width="stretch")
+    st.markdown('<div class="pa-position-slicer-marker"></div>', unsafe_allow_html=True)
+    st.markdown('<p class="pa-position-block-label">Posição</p>', unsafe_allow_html=True)
+    block_cols = st.columns(len(PLAYER_ANALYSIS_POSITION_BLOCKS))
+    for col, (block_id, label, _codes) in zip(block_cols, PLAYER_ANALYSIS_POSITION_BLOCKS):
+        with col:
+            is_selected = block_id in selected
+            if st.button(
+                label,
+                key=f"{key_prefix}_pos_block_{block_id}",
+                type="primary" if is_selected else "secondary",
+                use_container_width=True,
+            ):
+                if is_selected and len(selected) > 1:
+                    selected.discard(block_id)
+                elif not is_selected:
+                    selected.add(block_id)
+                st.session_state[state_key] = selected
+                st.session_state.pop(PLAYER_ANALYSIS_SELECT_KEY, None)
+                _clear_player_select_widgets()
+                st.session_state.pop(PLAYER_ANALYSIS_COMPARE_KEY, None)
+                st.rerun()
 
     if not selected:
         selected = {PLAYER_ANALYSIS_POSITION_BLOCKS[0][0]}
@@ -5363,6 +5336,8 @@ def _render_similarity_results_tab(
 
 
 def main() -> None:
+    _clear_stale_position_toggle_query()
+
     with st.spinner("Loading data…"):
         all_players, carries_players, passes_by_player, carries_by_player, _ = load_core_data()
         (
